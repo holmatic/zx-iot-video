@@ -1,0 +1,283 @@
+0001   0000             ; SYSINFO81 
+0002   0000             ; 	GPL
+0003   0000             ; 	Oliver Lange
+0004   0000             ; 	Version 1.0.1
+0005   0000             
+0006   0000             ; Compile with "tasm -80 -b sysinfo.asm sysinfo.p" 
+0007   0000             
+0008   0000             
+0009   0000             
+0010   0000             ; 2010/2011: Modifiziert f�r Spar-Interface mit TTLs - Siehe Forum
+0011   0000             ; 			 256 Bytes RAM an 3E00h nicht mehr n�tig
+0012   0000             
+0013   0000             
+0014   0000             
+0015   0000             
+0016   0000              
+0017   0000             #define db .byte ;  cross-assembler definitions 
+0018   0000             #define dw .word 
+0019   0000             #define ds .block 
+0020   0000             #define org .org 
+0021   0000             #define end .end 
+0022   0000             
+0023   0000             
+0024   0000             
+0025   0000             #define COM_ADDR  0EFh
+0026   0000             #define COM_DAT   06Fh
+0027   0000             
+0028   0000             #define ADDR_LED  020h
+0029   0000             #define ADDR_SELA 030h
+0030   0000             #define ADDR_SELB 038h
+0031   0000             #define A_RHR 00h
+0032   0000             #define A_THR 00h
+0033   0000             #define A_IER 01h
+0034   0000             #define A_FCR 02h
+0035   0000             #define A_ISR 02h
+0036   0000             #define A_LCR 03h
+0037   0000             #define A_MCR 04h
+0038   0000             #define A_LSR 05h
+0039   0000             #define A_MSR 06h
+0040   0000             #define A_SCPAD 07h
+0041   0000             
+0042   0000             #define ADDR_DISABLE 0
+0043   0000             #define UPDATE	01FCh	; LOAD/SAVE adress update subroutine in ROM
+0044   0000             
+0045   0000             ;;#define VERBOSE 1
+0046   0000              
+0047   4009             org     $4009 ; BASIC PROGRAMM
+0048   4009             ;= System variables ============================================ 
+0049   4009              
+0050   4009 00             db 0     	;VERSN 
+0051   400A 00 00          dw 0     	;E_PPC 
+0052   400C FF 40          dw dfile      ;D_FILE 
+0053   400E 00 41          dw dfile+1    ;DF_CC 
+0054   4010 18 41          dw var   	;VARS 
+0055   4012 00 00          dw 0     	;DEST 
+0056   4014 19 41          dw var+1      ;E_LINE 
+0057   4016 18 41          dw last-1     ;c_ADD 
+0058   4018 00 00          dw 0     	;X_PTR 
+0059   401A 19 41          dw last  	;STKBOT 
+0060   401C 19 41          dw last  	;STKEND 
+0061   401E 00             db 0     	;BERG 
+0062   401F 5D 40          dw membot     ;MEM 
+0063   4021 00             db 0     ;not used 
+0064   4022 02             db 2     ;DF_SZ 
+0065   4023 01 00          dw 1     ;S_TOP 
+0066   4025 FF FF FF       db $FF,$FF,$FF     ;LAST_K 
+0067   4028 37             db 55    ;MARGIN 
+0068   4029 BF 40          dw line10     ;NXTLIN   line10   dfile
+0069   402B 00 00          dw 0     ;OLDPPC 
+0070   402D 00             db 0     ;FLAGX 
+0071   402E 00 00          dw 0     ;STRLEN 
+0072   4030 8D 0C          dw $0C8D      ;T_ADDR 
+0073   4032 00 00          dw 0     ;SEED 
+0074   4034 FF FF          dw $FFFF      ;FRAMES 
+0075   4036 00 00          db 0,0   ;COORDS 
+0076   4038 BC             db $BC   ;PR_CC 
+0077   4039 21 18          db 33,24      ;S_POSN 
+0078   403B 40             db 01000000B  ;CDFLAG 
+0079   403C             
+0080   403C             
+0081   403C                ;ds 33    ;Print buffer --- now used for loader code, all loaded programs need to have the same !
+0082   403C             ; relocatible loader code
+0083   403C             PLOADER:
+0084   403C             lwt_start:
+0085   403C 0E FE           ld c,$fe   ; 7
+0086   403E 06 08           ld b,8  ; 7    for gap between start and bits
+0087   4040             
+0088   4040             lwt_stdly:                  ; 25 cycles=7.7us
+0089   4040 DB FE           in a,($FE)  ; 11
+0090   4042 17              rla         ; 4
+0091   4043 30 FB           jr nc,lwt_stdly ; 12 / 7  (D7=0 is low level, wait for high)
+0092   4045                 ; trigger is seen 4us too late in average, so wait 48-4 - 4 us now: 130 cy in-in
+0093   4045             lgapdly:
+0094   4045 10 FE           djnz lgapdly     ; 13*n-5 = 99 for 8
+0095   4047 06 08           ld b,8  ; 7
+0096   4049             lbloop:                 ;  need 104 for 32us
+0097   4049 ED 50           in d,(c)    ; 12
+0098   404B CB 12           rl d        ; 8
+0099   404D 17              rla         ; 4 (rr a is 8)
+0100   404E 16 04           ld d,4      ; 7
+0101   4050             lbdly:
+0102   4050 15              dec d          ; 4          b*16-5 = 59
+0103   4051 20 FD           jr nz,lbdly     ; 12 / 7
+0104   4053 10 F4           djnz lbloop     ; 13 / 8
+0105   4055 77              ld (hl),a   ; 7
+0106   4056             
+0107   4056 CD FC 01    	CALL UPDATE  ; will use DE, inc HL    77 clks
+0108   4059 18 E1           jr lwt_start     ; 12
+0109   405B             PLOADEND:
+0110   405B                ds PLOADER+33-PLOADEND    ; Remaining space of 33 byte print buffer, after 29 byte loader
+0111   405D             
+0112   405D             membot: 
+0113   405D                ds 30    ;Calculator�s memory area 
+0114   407B                ds 2     ;not used 
+0115   407D              
+0116   407D             ;= First BASIC line, asm code ================================== 
+0117   407D              
+0118   407D             line0: 
+0119   407D 00 00          db 0,0   ;line number 
+0120   407F 3E 00          dw line10-$-2 ;line length 
+0121   4081 EA             db $ea   ; REM 
+0122   4082             
+0123   4082             
+0124   4082             #define ELINE	4014h  ; Systemvariable, die das Ende des abzuspeichernen BASIC-Programs anzeigt
+0125   4082             #define ELINEHI	4015h  ; Systemvariable, die das Ende des abzuspeichernen BASIC-Programs anzeigt
+0126   4082             
+0127   4082             #define SHOW	0207h  ; ROM-Routinen
+0128   4082             #define FAST	02E7h
+0129   4082             #define RCLS	0A2Ah
+0130   4082             #define GETKEY	02BBh
+0131   4082             
+0132   4082             
+0133   4082             #DEFINE RST_PRTCHAR RST 10H
+0134   4082             #DEFINE c_SPACE 0
+0135   4082             #DEFINE c_NEWLINE 76H
+0136   4082             #DEFINE c_0 1CH
+0137   4082             
+0138   4082             #DEFINE c_A 38
+0139   4082             #DEFINE c_B (c_A+1)
+0140   4082             #DEFINE c_C (c_A+2)
+0141   4082             #DEFINE c_D (c_A+3)
+0142   4082             #DEFINE c_E (c_A+4)
+0143   4082             #DEFINE c_F (c_A+5)
+0144   4082             #DEFINE c_G (c_A+6)
+0145   4082             #DEFINE c_H (c_A+7)
+0146   4082             #DEFINE c_I (c_A+8)
+0147   4082             #DEFINE c_J (c_A+9)
+0148   4082             #DEFINE c_K (c_J+1)
+0149   4082             #DEFINE c_L (c_J+2)
+0150   4082             #DEFINE c_M (c_J+3)
+0151   4082             #DEFINE c_N (c_J+4)
+0152   4082             #DEFINE c_O (c_J+5)
+0153   4082             #DEFINE c_P (c_J+6)
+0154   4082             #DEFINE c_Q (c_J+7)
+0155   4082             #DEFINE c_R (c_J+8)
+0156   4082             #DEFINE c_S (c_J+9)
+0157   4082             #DEFINE c_T (c_S+1)
+0158   4082             #DEFINE c_U (c_S+2)
+0159   4082             #DEFINE c_V (c_S+3)
+0160   4082             #DEFINE c_W (c_S+4)
+0161   4082             #DEFINE c_X (c_S+5)
+0162   4082             #DEFINE c_Y (c_S+6)
+0163   4082             #DEFINE c_Z (c_S+7)
+0164   4082             
+0165   4082             
+0166   4082             
+0167   4082             ;
+0168   4082             ;   === Main entry point ====
+0169   4082             ;
+0170   4082             
+0171   4082             BASIC_START:
+0172   4082             
+0173   4082 CD E7 02    	CALL FAST	; here we go
+0174   4085                 ; send msg back
+0175   4085 CD 46 0F        CALL $0F46  ; go to fast mode
+0176   4088 06 A0           LD B,160  ; 200=160ms
+0177   408A C5          W1: push BC
+0178   408B 06 00           ld b,0
+0179   408D             W2:
+0180   408D 10 FE           djnz W2     ; 4usec * B*B
+0181   408F C1              pop BC
+0182   4090 10 F8           djnz W1
+0183   4092 1E 49           LD E, 73    ; ID for menu reply
+0184   4094 CD 1F 03        call $031F  ; SAVE byte in E
+0185   4097 1E 01           LD E, 1    ; ID for menu reply
+0186   4099 CD 1F 03        call $031F  ; SAVE byte in E
+0187   409C 1E 00           LD E, 0    ; send dummy as end
+0188   409E CD 1F 03        call $031F ;
+0189   40A1                 ;POP HL ; remove ret addr
+0190   40A1                 ;POP HL ; remove ret addr
+0191   40A1                 ;POP HL ; remove ret addr
+0192   40A1                 ;POP HL ; remove ret addr
+0193   40A1                 ;POP HL ; remove ret addr
+0194   40A1                 ;POP HL ; remove ret addr
+0195   40A1                 ;POP HL ; remove ret addr ??
+0196   40A1                ; 7 times pop needed, 8 times is too much   POP HL or just reset
+0197   40A1                 ; /* reset stack pointer */
+0198   40A1 2A 02 40    	LD HL,(16386) ; ERR_SP
+0199   40A4 F9          	LD SP,HL
+0200   40A5 21 76 06        LD HL, $0676    ; return address in NEXT-LINE like when LOADING
+0201   40A8 E3          	EX (SP),HL
+0202   40A9             #if 1
+0203   40A9                 ; run from calculator area
+0204   40A9 21 3C 40        LD HL,PLOADER
+0205   40AC 11 C4 7F        LD DE,32708
+0206   40AF 01 20 00        LD BC,32
+0207   40B2 ED B0           LDIR
+0208   40B4             
+0209   40B4 21 15 40    	LD HL,ELINEHI
+0210   40B7 34          	INC (HL) ; make sure no match during load
+0211   40B8 21 09 40    	LD HL,4009h	; start of BASIC area to load
+0212   40BB C3 C4 7F        jp 32708
+0213   40BE~            #else
+0214   40BE~            	LD HL,ELINEHI
+0215   40BE~            	INC (HL) ; make sure no match during load
+0216   40BE~            	LD HL,4009h	; start of BASIC area to load
+0217   40BE~                jp PLOADER
+0218   40BE             #endif
+0219   40BE 76             db $76   ;N/L 
+0220   40BF             
+0221   40BF             line10:
+0222   40BF 00 0A          db 0,10  ;  line number 
+0223   40C1 06 00          dw line20-$-2  ;line length 
+0224   40C3 F1 26 0D 14    db 241,38,13,20,65,118   ;LET a$ = INKEY$
+0224   40C7 41 76 
+0225   40C9             
+0226   40C9             line20:
+0227   40C9 00 14          db 0,20  ; line number 
+0228   40CB 11 00          dw line30-$-2  ;line length 
+0229   40CD FA 26 0D 14    db 250,38,13,20,11,11,222,236,29,28,126,132,32,0,0,0,118   ;IF a$ = "" THEN GOTO 10
+0229   40D1 0B 0B DE EC 
+0229   40D5 1D 1C 7E 84 
+0229   40D9 20 00 00 00 
+0229   40DD 76 
+0230   40DE             
+0231   40DE             line30:
+0232   40DE 00 1E          db 0,30  ;  line number 
+0233   40E0 0E 00          dw line50-$-2  ;line length 
+0234   40E2 F4 C5 0B 1D    db 244,197,11, 29,34,33,31,34, 11,26,196,38,13,118   ;POKE VAL "16536",CODE a$
+0234   40E6 22 21 1F 22 
+0234   40EA 0B 1A C4 26 
+0234   40EE 0D 76 
+0235   40F0             
+0236   40F0             line50:
+0237   40F0 00 32          db 0,50  ;line number 
+0238   40F2 0B 00          dw dfile-$-2  ;line length 
+0239   40F4 F5             db $f5   ;PRINT 
+0240   40F5 D4             db $d4   ;USR 
+0241   40F6 C5             db $c5   ;VAL
+0242   40F7 0B             db $0b   ;"
+0243   40F8 1D             db $1d   ;1 
+0244   40F9 22             db $22   ;6 
+0245   40FA 21             db $21   ;5 
+0246   40FB 1D             db $1d   ;1 
+0247   40FC 20             db $20   ;4 
+0248   40FD 0B             db $0b   ;"
+0249   40FE 76             db $76   ;N/L 
+0250   40FF             
+0251   40FF             
+0252   40FF                
+0253   40FF             ;- Display file -------------------------------------------- 
+0254   40FF              
+0255   40FF             dfile: 
+0256   40FF 76             db $76 
+0257   4100                ;db c_Z,c_X,0,0,c_I,c_O,c_T,
+0258   4100 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0258   4104 76 76 76 76 
+0259   4108 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0259   410C 76 76 76 76 
+0260   4110 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0260   4114 76 76 76 76 
+0261   4118              
+0262   4118             ;- BASIC-Variables ---------------------------------------- 
+0263   4118              
+0264   4118             var: 
+0265   4118 80             db $80 
+0266   4119              
+0267   4119             ;- End of program area ---------------------------- 
+0268   4119             
+0269   4119             last: 
+0270   4119              
+0271   4119                end 
+tasm: Number of errors = 0
