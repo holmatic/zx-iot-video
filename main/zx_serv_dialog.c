@@ -55,16 +55,16 @@ typedef struct {
 static zxsrv_menu_response_entry menu_response[24];
 
 static uint8_t menu_resp_size=0;
-//static char curr_dir[];
 
+/* forward declare */
 static void clear_mrespond_entries();   
 static void create_mrespond_entry(uint8_t zxkey, resp_func func, const char* func_arg_s,  int func_arg_i);
 
-
-static bool zxsrv_respond_filemenu(const char *dirpath, int); // fwd declare
+static bool zxsrv_respond_filemenu(const char *dirpath, int); 
 static bool zxsrv_respond_fileload(const char *filepath, int dummy);
 static bool zxsrv_respond_inpstr(const char *question, int offset);
 static bool zxsrv_respond_wifiscan(const char *dirpath, int offset);
+static bool zxsrv_videooptions(const char *dirpath, int offset);
 static bool zxsrv_system(const char *dirpath, int offset);
 static bool zxsrv_help(const char *dirpath, int offset);
 
@@ -243,7 +243,7 @@ static bool zxsrv_help(const char *wifi_name, int offset){
     zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01", 8);
     zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00", 8);
 
-    sprintf(txt_buf,"       ##[ ZX-WESPI HELP ]##");
+    sprintf(txt_buf,"      ##[ ZX-WESPI-V HELP ]##");
     zxfimg_print_video(3,txt_buf);
 
     sprintf(txt_buf,"- LOAD AND SAVE ZX PROGRAM FILES");
@@ -275,18 +275,24 @@ static bool zxsrv_system(const char *wifi_name, int offset){
 
     zxfimg_create(ZXFI_MENU_KEY);
 
-    zxfimg_cpzx_video (0, (const uint8_t *) "\x1c\x34\x04\x05\x05\x05\x04\x00", 8);
-    zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01", 8);
-    zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00", 8);
+    //zxfimg_cpzx_video (0, (const uint8_t *) "\x1c\x34\x04\x05\x05\x05\x04\x00", 8);   /* simple but memory-saving version of header; currently replaced by the fancy one below */
+    //zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01", 8);
+    //zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00", 8);
+    zxfimg_cpzx_video (0, (const uint8_t *) "\x1c\x34\x04\x05\x05\x05\x04\x00\x00\x00\x83\x89\x89\x82\x83\x83\x83\x83\x83\x83\x83\x83\x83\x83\x83\x04\x00\x00\x38\x3e\x38", 31);
+    zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01\x00\x00\x83\x09\x09\x81\x80\x8a\x8a\x8a\x8a\x8a\x8a\x8a\x8a\x8a\x8a\x07\x00\x00\x28\x34\x33", 31);
+    zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00\x00\x00\x00\x03\x03\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x2b\x2e\x2c", 31);
 
-    sprintf(txt_buf," ##[ ZX-WESPI SYSTEM CONFIG ]##");
+    sprintf(txt_buf," #[ ZX-WESPI-V SYSTEM CONFIG ]#");
     zxfimg_print_video(4,txt_buf);
 
     sprintf(txt_buf,"[S] KEEP SILENCE TO LOAD TAPE");
     zxfimg_print_video(7,txt_buf);
 
-    sprintf(txt_buf,"[W] WIFI CONFIG");
+    sprintf(txt_buf,"[V] VIDEO CONFIG");
     zxfimg_print_video(9,txt_buf);
+
+    sprintf(txt_buf,"[W] WIFI CONFIG");
+    zxfimg_print_video(11,txt_buf);
 
     sprintf(txt_buf,"MAC %s",wifi_get_MAC_addr());
     zxfimg_print_video(18,txt_buf);
@@ -295,6 +301,7 @@ static bool zxsrv_system(const char *wifi_name, int offset){
     zxfimg_print_video(20,txt_buf);
 
     clear_mrespond_entries();
+    create_mrespond_entry(59, zxsrv_videooptions, "VIDEO", 0 ); // "V"
     create_mrespond_entry(60, zxsrv_respond_wifiscan, "WIFI", 0 ); // "W"
     /* append default entry */
     create_mrespond_entry(0, zxsrv_respond_filemenu, "/spiffs/", 0 );
@@ -357,6 +364,7 @@ static bool zxsrv_respond_wifiscan(const char *dirpath, int offset){
 
 static bool zxsrv_videooptions(const char *name, int command){
 
+    /* if this is called with a nonzero cmd, we are reloading ans executing the issued command */
     if(command){
         switch(command){
             case 'C':
@@ -380,9 +388,6 @@ static bool zxsrv_videooptions(const char *name, int command){
     zxfimg_cpzx_video (0, (const uint8_t *) "\x1c\x34\x04\x05\x05\x05\x04\x00\x00\x86\x00\x85\x02\x07\x02\x07\x04\x00\x06\x03\x87\x89\x89\x89\x89\x04\x3b\x2e\x29\x2a\x34", 31);
     zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01\x00\x00\x05\x06\x00\x05\x00\x05\x85\x85\x03\x01\x85\x08\x08\x08\x08\x05\x00\x00\x28\x34\x33", 31);
     zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00\x00\x00\x02\x00\x02\x03\x02\x03\x01\x00\x03\x01\x00\x03\x03\x03\x03\x00\x00\x00\x2b\x2e\x2c", 31);
-    //zxfimg_cpzx_video (0, (const uint8_t *) "\x1c\x34\x04\x05\x05\x05\x04\x00", 8);
-    //zxfimg_cpzx_video (1, (const uint8_t *) "\x03\x89\x05\x05\x05\x05\x05\x01\x00\x00\x00\x06\x00\x06", 14);
-    //zxfimg_cpzx_video (2, (const uint8_t *) "\x00\x00\x00\x01\x01\x01\x00\x00", 8);
 
     sprintf(txt_buf,"###[ ZX-WESPI VIDEO SETTINGS ]###");
     zxfimg_print_video(4,txt_buf);
