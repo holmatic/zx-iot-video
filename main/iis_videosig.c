@@ -324,7 +324,7 @@ static uint32_t get_pixel_adjust_nv()
 static uint32_t get_vert_line_adjust_nv()
 {
     esp_err_t err;
-    uint32_t val=24;  /* default goes here */
+    uint32_t val=26;  /* default goes here, 25 for NU, 26 for original */
     nvs_handle my_handle;
     ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
     // Read
@@ -399,7 +399,7 @@ static void calpixel_framecheck(){
 					/* last 4 lines are busy, check if we have the line above and below clean */
 					if(vid_pixel_mem[vline_adjust*10 + 159*10 + 1 ]==0 && vid_pixel_mem[vline_adjust*10 + 192*10 + 1 ]==0){
 						// vertical position match
-						ESP_LOGI(TAG," vline_adjust match for %d (default 24) ", vline_adjust);			
+						ESP_LOGI(TAG," vline_adjust match for %d (default 26) ", vline_adjust);			
 						set_vert_line_adjust_nv(vline_adjust);
 						break;
 					}

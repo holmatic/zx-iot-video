@@ -321,7 +321,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     FILE *fd = NULL;
     struct stat file_stat;
     bool is_ota=false;
-    const char* iotfilename="zx_iot.bin";
+    const char* iotfilename="zx_iot_video.bin";
     const esp_partition_t *update_partition = NULL;
     esp_ota_handle_t update_handle = 0 ;
     esp_err_t err;
