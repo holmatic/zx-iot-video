@@ -26,11 +26,8 @@ static inline uint32_t samples_to_usec(uint32_t samples){
 
 
 
-static uint32_t data_num_0=0;
-static uint32_t data_num_1=0;
 static bool data_vid_active=0;
 
-static uint32_t data_num_short_0=0;
 
 
 static zxserv_evt_type_t phase=ZXSG_INIT;
@@ -157,6 +154,16 @@ static void analyze_0_to_1(uint32_t duration)
 	}
 }
 
+static uint32_t data_num_0=0;
+static uint32_t data_num_1=0;
+static uint32_t data_num_short_0=0;
+
+
+static bool actual_logic_level=0;
+static uint32_t level_cnt=0;
+static uint32_t holdoff_cnt=0;
+static uint32_t acc_holdoff_cnt=0;
+
 
 
 /* report if we have a regular video signal or are in FAST/LOAD/SAVE/ect */
@@ -164,6 +171,7 @@ void sfzx_report_video_signal_status(bool vid_is_active){
 	if(data_vid_active!=vid_is_active){
 		data_num_0=1;
 		data_num_1=1;
+		level_cnt=holdoff_cnt=0;
 		zxfile.state=ZXFS_INIT;
 		ESP_LOGI(TAG,"Video signal status: %s\n", vid_is_active?"active":"inactive" );
 		if(vid_is_active) set_det_phase(ZXSG_SLOWM_50HZ);
@@ -176,6 +184,40 @@ void sfzx_report_video_signal_status(bool vid_is_active){
 void sfzx_checksample(uint32_t data)
 {
 	if (data==0) {
+		if(actual_logic_level){
+			holdoff_cnt++;
+			if(holdoff_cnt>USEC_TO_SAMPLES(14)){
+				analyze_1_to_0(level_cnt);
+				actual_logic_level=false;
+				acc_holdoff_cnt=0;
+				level_cnt=0;
+			}
+		} else {
+			level_cnt++;
+			acc_holdoff_cnt+=holdoff_cnt;
+			holdoff_cnt=0;
+		}
+	} else if (data==0xffffffff){
+		if(!actual_logic_level){
+			holdoff_cnt++;
+			if(holdoff_cnt>USEC_TO_SAMPLES(14)){
+				analyze_0_to_1(level_cnt);
+				actual_logic_level=true;
+				acc_holdoff_cnt=0;
+				level_cnt=0;
+			}
+		} else {
+			level_cnt++;
+			acc_holdoff_cnt+=holdoff_cnt;
+			holdoff_cnt=0;
+		}
+	} 
+}
+
+
+void sfzx_checksample2(uint32_t data)
+{
+	if (data==0) {
 		data_num_0++;
 		if( data_num_1 ){
 			if (data_num_0 > USEC_TO_SAMPLES(14) ){
@@ -183,8 +225,7 @@ void sfzx_checksample(uint32_t data)
 				analyze_1_to_0(data_num_1);
 				data_num_1=0;
 				data_num_short_0=0;
-			}
-			else{
+			} else {
 				data_num_short_0++;
 				data_num_1++; // count for continuation through hsync
 			}
@@ -206,21 +247,25 @@ void sfzx_checksample(uint32_t data)
 //	}
 }
 
+
 /* called periodically at roughly millisec scale */
 void sfzx_periodic_check(){
-	if(data_num_1 > MILLISEC_TO_SAMPLES(80)){
-		if(data_num_short_0 > data_num_1/16)	/* we see the H sync pulses but no V sync */	
-			set_det_phase(ZXSG_HIGH); /* more than two frames high !*/
-		else {
-			/* silence, normally constant-low but due to hi pass filter is seen for us as constant high with no hsync */
-			set_det_phase(ZXSG_SILENCE); 
-		}
-	}
-	else if (data_num_0 > MILLISEC_TO_SAMPLES(100)) {
+	if(level_cnt > MILLISEC_TO_SAMPLES(80)){
+		if(actual_logic_level){
+			//ESP_LOGI(TAG,"sfzx_periodic_check 1: %d %d %d\n",data_num_1,data_num_short_0,data_num_0 );
+			if(acc_holdoff_cnt > level_cnt/32)	/* we see the H sync pulses but no V sync */	
+				set_det_phase(ZXSG_HIGH); /* more than two frames high !*/
+			else {
+				/* silence, normally constant-low but due to hi pass filter is seen for us as constant high with no hsync */
+				set_det_phase(ZXSG_SILENCE); 
+			}
+		} else {
+			//ESP_LOGI(TAG,"sfzx_periodic_check 0: %d %d %d\n",data_num_1,data_num_short_0,data_num_1 );
 			/* silence, normally  constant-low would not be visible as low - 
 			due to high pass filter, but if for any reason we see it nevertheles, we can also react accordingly */
 			set_det_phase(ZXSG_SILENCE); 
 		}
+	}
 }          
 
 

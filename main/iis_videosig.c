@@ -320,6 +320,23 @@ static uint32_t get_pixel_adjust_nv()
     return val;
 }
 
+
+static uint32_t get_vert_line_adjust_nv()
+{
+    esp_err_t err;
+    uint32_t val=24;  /* default goes here */
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u32(my_handle, "VID_VERT_LIN", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+    nvs_close(my_handle);
+    return val;
+}
+
+
 static void set_pixel_adjust_nv(uint32_t newval)
 {
     nvs_handle my_handle;
@@ -332,15 +349,32 @@ static void set_pixel_adjust_nv(uint32_t newval)
 }
 
 
+static void set_vert_line_adjust_nv(uint32_t newval)
+{
+    nvs_handle my_handle;
+    if(get_vert_line_adjust_nv() != newval) {
+        ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+        ESP_ERROR_CHECK( nvs_set_u32(my_handle, "VID_VERT_LIN", newval ) );
+        ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+        nvs_close(my_handle);
+    }
+}
+
+
 static uint32_t pixel_calibration_active=0;
 static uint8_t pixel_calibration_frames=0;
 static uint32_t pixel_adjust=12;		
+static uint32_t vline_adjust=24;		
 static uint32_t cal_pix_adj=0;		
+static bool cal_vert_adj_pending=false;		
 
+#define CAL_FILT_HSIZ 3 // halfsize of the filter, so 3 would mean 2*N+1 = 7 values averaged
 static uint32_t cal_pix_bestadj_val=0;		/* for finding optimum value*/
 static uint32_t cal_pix_bestadj_pos=0;		
-static uint32_t cal_pix_adj_buf1=0;		/* for smoothing */	
-static uint32_t cal_pix_adj_buf2=0;		
+
+static uint32_t cal_pix_filter[2*CAL_FILT_HSIZ+1];		/* smoothing filter */
+
+
 static uint32_t cal_pix_adj_posbuf=0;
 
 static uint32_t cal_score=0;
@@ -349,28 +383,45 @@ void vid_cal_pixel_start(){
 
 	cal_pix_adj=0;
 	pixel_calibration_active=200;
-	pixel_calibration_frames=6;
+	pixel_calibration_frames=10;
 	cal_pix_adj=pixel_calibration_active;
-	cal_pix_bestadj_val=cal_pix_adj_buf1=cal_pix_adj_buf2=0;
+	cal_pix_bestadj_val=0;
+	for(int i=0;i<2*CAL_FILT_HSIZ+1;i++) cal_pix_filter[i]=0;
 	cal_score=0;
-	//lcd_get_retransmits_and_restart(false);
+	cal_vert_adj_pending=true;
 }
 
 static void calpixel_framecheck(){
 	if(pixel_calibration_active){
-		if(--pixel_calibration_frames==0){
+		if(cal_vert_adj_pending){
+			if( --pixel_calibration_frames==0){
+				for(vline_adjust=16;vline_adjust<32;vline_adjust++){
+					/* last 4 lines are busy, check if we have the line above and below clean */
+					if(vid_pixel_mem[vline_adjust*10 + 159*10 + 1 ]==0 && vid_pixel_mem[vline_adjust*10 + 192*10 + 1 ]==0){
+						// vertical position match
+						ESP_LOGI(TAG," vline_adjust match for %d (default 24) ", vline_adjust);			
+						set_vert_line_adjust_nv(vline_adjust);
+						break;
+					}
+				}
+				if(vline_adjust>=32) vline_adjust=24; /* set back to default if no optimume found */
+				cal_vert_adj_pending=false;
+				pixel_calibration_frames=6;
+			}
+		}
+		else if(--pixel_calibration_frames==0){
 			//uint32_t score=lcd_get_retransmits_and_restart(true);
-			uint32_t avg_score=cal_score+cal_pix_adj_buf1+cal_pix_adj_buf1+cal_pix_adj_buf2;
+			uint32_t avg_score=cal_pix_filter[CAL_FILT_HSIZ]; /* double weight on the central one */
+			for(int i=0; i<2*CAL_FILT_HSIZ+1; i++) avg_score+=cal_pix_filter[i];
 			ESP_LOGI(TAG," Step %d: Score %d, avg %d", cal_pix_adj,cal_score,avg_score );			
 			if(avg_score>cal_pix_bestadj_val){
 				/* new optimum */
-				cal_pix_bestadj_pos=cal_pix_adj_posbuf;
+				cal_pix_bestadj_pos=cal_pix_adj+CAL_FILT_HSIZ; /* change calculation when changing stepsize from 1  */
 				cal_pix_bestadj_val=avg_score;
 			}
 			/* feed averaging data */
-			cal_pix_adj_posbuf=cal_pix_adj;
-			cal_pix_adj_buf2=cal_pix_adj_buf1;
-			cal_pix_adj_buf1=cal_score;
+			for(int i=0; i<2*CAL_FILT_HSIZ; i++) cal_pix_filter[i]=cal_pix_filter[i+1]; // shift through 
+			cal_pix_filter[2*CAL_FILT_HSIZ]=cal_score;
 
 			pixel_calibration_frames=6;
 			pixel_calibration_active--;
@@ -380,48 +431,30 @@ static void calpixel_framecheck(){
 		else
 		{
 			/* checks */
-			if(vid_pixel_mem[(3+21)*80]==0) cal_score++;
-			if(vid_pixel_mem[(3+21)*80+1]==0xff00ff00) cal_score++;
-			if(vid_pixel_mem[(3+21)*80+10+1]==0xff00ff00) cal_score++;
-			if(vid_pixel_mem[(3+21)*80+20+1]==0xff00ff00) cal_score++;
+			if(vid_pixel_mem[vline_adjust*10+ 21*80]==0) cal_score++;
+			if(vid_pixel_mem[vline_adjust*10+ 21*80+1]==0xff00ff00) cal_score+=50;
+			if(vid_pixel_mem[vline_adjust*10+ 21*80+10+1]==0xff00ff00) cal_score+=50;
+			if(vid_pixel_mem[vline_adjust*10+ 21*80+20+1]==0xff00ff00) cal_score+=50;
 
 			/* the test screen has a chequered pattern */
 			for(uint32_t l=0; l<12; l+=1){
 				for(uint32_t w=0; w<10; w++){
 					uint32_t p,d;
-					d=vid_pixel_mem[(3+23)*80+10*l+w];
+					d=vid_pixel_mem[vline_adjust*10 +  23*80+10*l+w];
 					if(w==0 || w==9)
 						p=0;
 					else
 						p= ( (w^l) & 1 ) ? 0xaaaaaaaa : 0x55555555;
+						//p= ( (w^l) & 1 ) ? 0x55555555 : 0xaaaaaaaa;
 					if(p == d) cal_score++;
 				}
 			}
 
-			/*
-			if(vid_pixel_mem[(3+23)*80+ 1]==0xaaaaaaaa) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+11]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+21]==0xaaaaaaaa) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+31]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+41]==0xaaaaaaaa) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+51]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+ 8]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+18]==0xaaaaaaaa) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+28]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+38]==0xaaaaaaaa) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+48]==0x55555555) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+58]==0xaaaaaaaa) cal_score++;
-
-			if(vid_pixel_mem[(3+23)*80+10]==0) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+20]==0) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+ 9]==0) cal_score++;
-			if(vid_pixel_mem[(3+23)*80+19]==0) cal_score++;
-			*/
-
 			if((cal_pix_adj==165||cal_pix_adj==129) && pixel_calibration_frames==2)
 				ESP_LOGI(TAG," Sample: %08x %08x %08x", vid_pixel_mem[ (3+21)*80 ],vid_pixel_mem[(3+23)*80+1],vid_pixel_mem[(3+23)*80+8] );	
 		}
-		if(pixel_calibration_active==0){
+		if(pixel_calibration_active<80){
+			pixel_calibration_active=0;
 			ESP_LOGI(TAG," Done: Optimum is at %d.", cal_pix_bestadj_pos);	
 			set_pixel_adjust_nv(cal_pix_bestadj_pos);		
 			pixel_adjust=cal_pix_bestadj_pos;
@@ -515,6 +548,7 @@ static void vid_in_task(void*arg)
 	uint32_t frame_count=0;
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
 	pixel_adjust=get_pixel_adjust_nv();
+	vline_adjust=get_vert_line_adjust_nv();
     ESP_LOGI(TAG,"vid_in_task START \n");
     while(true){
 		uint32_t line_acc_bits=0;
