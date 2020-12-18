@@ -308,7 +308,7 @@ static inline void vid_ignore_line(uint32_t *line_acc_bits){
 static uint32_t get_pixel_adjust_nv()
 {
     esp_err_t err;
-    uint32_t val=162;  /* default goes here */
+    uint32_t val=162;  /* default goes here, 162 for ZX, 125 for NU */
     nvs_handle my_handle;
     ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
     // Read

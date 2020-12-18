@@ -2,6 +2,10 @@
 ZX-Wespi: ESP32-based Wifi-enabled Fileserver for ZX81 with very simple DIY interfacing circuit
 
 
+## Hardware
+
+![Schematic outline](doc/zx-iot-video-sketch.png "How to connect ZX, ESP32, and TFT Display")
+
 
 ## Version Info
 
