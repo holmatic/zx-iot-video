@@ -20,12 +20,6 @@ the I2S interface of the ESP is used to retrieve the ZX81 video signal - which i
 ![Schematic outline](doc/zx-iot-video-sketch.png "How to connect ZX, ESP32, and TFT Display")
 
 
-    R1: 1K5 Ohm 
-    R2: 180K Ohm
-    R3: 4K7 Ohm
-    R4: 100 Ohm
-    ...
-
 
 ### Power regulator
 
@@ -72,18 +66,18 @@ This short instruction is for using the ESP32 download tool (tested with V3.8.5)
 - Run the tool, go to "Developer Mode", "ESP32", choose "SPI download" tab
 - Set up the following files and positions to flash:
 
-  partition-table.bin     @  0x8000 
-  ota_data_initial.bin    @  0xd000
-  bootloader.bin          @  0x1000
-  zx_iot.bin		  @ 0x10000
+    partition-table.bin     @  0x8000 
+    ota_data_initial.bin    @  0xd000
+    bootloader.bin          @  0x1000
+    zx_iot_video.bin		  @ 0x10000
 
 - For the rest of parameters, use:
 
-  SPI SPEED 40MHz
-  SPI MODE DIO
-  FLSH SIZE 32MBit  (=4MB)
-  COM: (need to find out, look up in your OS' device manager in case of doubt)
-  BAUD: 460800 (may pick a different baud rate)
+    SPI SPEED 40MHz
+    SPI MODE DIO
+    FLSH SIZE 32MBit  (=4MB)
+    COM: (need to find out, look up in your OS' device manager in case of doubt)
+    BAUD: 460800 (may pick a different baud rate)
 
 
 - Press start to flash. If the ESP32 does not connect automatically, try holding the BOOT knob and/or EN(reset) 
