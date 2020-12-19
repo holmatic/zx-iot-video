@@ -4,7 +4,7 @@ This project creates the firmware for **ZX-Wespi-V** - a DIY ESP32-based TFT-vid
 When using a Sinclair ZX81 nowadays, one may look for a more handy replacement of the TV set and cassette recorder. 
 Maybe even something that can be built in, and allows to exchange the ZX programs and files via wifi to your modern computer. 
 
-Common modern LCD monitors often get in trouble with the ancient ZX81 video signal, as there is no colour carrier signal that allows the monitor to recognize PAL versus NTSC, and the  synchonisation sinals are - lets say a 'bit more dynamic' than on modern devices, so nowadays' displays are offended and show blue screens whenever ZX switches to FAST mode. Wespi-V is ZX-aware, starts up fast, handles FAST mode gracefully, and shows the expected LOAD/SAVE-stripes.
+Common modern LCD monitors often get in trouble with the ancient ZX81 video signal, as there is no colour carrier signal that allows the monitor to recognize PAL versus NTSC, and the synchonisation sinals are - lets say a 'bit more dynamic' than on modern devices, so nowadays' displays are offended and show blue screens whenever ZX switches to FAST mode. Wespi-V is ZX-aware, starts up quickly, handles FAST mode gracefully, and shows the expected LOAD/SAVE-stripes.
 
 Components needed for building the device are quite inexpensive (about 20€ in total), and required soldering skills are just classic cables and a few simple components.
 
@@ -66,18 +66,18 @@ This short instruction is for using the ESP32 download tool (tested with V3.8.5)
 - Run the tool, go to "Developer Mode", "ESP32", choose "SPI download" tab
 - Set up the following files and positions to flash:
 
-    partition-table.bin     @  0x8000 
-    ota_data_initial.bin    @  0xd000
-    bootloader.bin          @  0x1000
-    zx_iot_video.bin		  @ 0x10000
+  + partition-table.bin     @  0x8000 
+  + ota_data_initial.bin    @  0xd000
+  + bootloader.bin          @  0x1000
+  + zx_iot_video.bin		  @ 0x10000
 
 - For the rest of parameters, use:
 
-    SPI SPEED 40MHz
-    SPI MODE DIO
-    FLSH SIZE 32MBit  (=4MB)
-    COM: (need to find out, look up in your OS' device manager in case of doubt)
-    BAUD: 460800 (may pick a different baud rate)
+  + SPI SPEED 40MHz
+  + SPI MODE DIO
+  + FLSH SIZE 32MBit  (=4MB)
+  + COM: (need to find out, look up in your OS' device manager in case of doubt)
+  + BAUD: 460800 (may pick a different baud rate)
 
 
 - Press start to flash. If the ESP32 does not connect automatically, try holding the BOOT knob and/or EN(reset) 
