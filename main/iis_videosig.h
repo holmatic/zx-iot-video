@@ -14,4 +14,7 @@ void vid_init();
 void vid_cal_pixel_start();
 extern uint32_t vid_pixel_mem[];
 
+/* number of top-header lines before actual standard-character screen starts*/
+extern uint32_t vid_get_vline_offset();
+
 #endif /* _IIS_VIDEOSIGNAL_H_ */

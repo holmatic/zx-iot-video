@@ -379,6 +379,13 @@ static uint32_t cal_pix_adj_posbuf=0;
 
 static uint32_t cal_score=0;
 
+
+extern uint32_t vid_get_vline_offset()
+{
+	return vline_adjust;
+}
+
+
 void vid_cal_pixel_start(){
 
 	cal_pix_adj=0;

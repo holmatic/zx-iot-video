@@ -26,7 +26,6 @@
 #include "signal_from_zx.h"
 #include "signal_to_zx.h"
 #include "wifi_sta.h"
-#include "host_spi_if.h"
 #include "iis_videosig.h"
 #include "led_matrix.h"
 #include "lcd_display.h"
@@ -206,11 +205,11 @@ void app_main()
     zxsrv_init();
     stzx_init();
     sfzx_init();
-    //host_spi_init();
     vid_init();
     lcd_disp_init();
-    
-    //ledmx_init();
+
+    if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
+
 	wifi_sta_init(); /* needs nvs_sys_init */
 
     /* Initialize file storage */
