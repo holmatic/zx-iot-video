@@ -15,7 +15,7 @@ static const char* TAG = "stzx";
 
 
 //i2s number
-#define STZX_I2S_NUM           (1)
+#define STZX_I2S_NUM           (-1) // was 1
 //i2s sample rate
 // 
 #define STZX_I2S_SAMPLE_RATE   (3906) // times 32 is 8us/bit = 64us/byte
@@ -63,7 +63,9 @@ void stzx_init()
 	};
 	 //install and start i2s driver
     //xQueueCreate(5, sizeof(i2s_event_t));
-	ESP_ERROR_CHECK( i2s_driver_install(i2s_num, &i2s_config, 5, &event_queue ));
+	if(STZX_I2S_NUM>=0){
+		ESP_ERROR_CHECK( i2s_driver_install(i2s_num, &i2s_config, 5, &event_queue ));
+	}
 	//init DOUT pad
     static const i2s_pin_config_t pin_config = {
         .bck_io_num = I2S_PIN_NO_CHANGE,
@@ -71,8 +73,9 @@ void stzx_init()
         .data_out_num = 22,
         .data_in_num = I2S_PIN_NO_CHANGE
     };
-    i2s_set_pin(i2s_num, &pin_config);
-    
+	if(STZX_I2S_NUM>=0){
+	    i2s_set_pin(i2s_num, &pin_config);
+	}
     i2s_writ_buff=(uint8_t*) calloc(STZX_I2S_WRITE_LEN_BYTES, sizeof(uint8_t));
     if(!i2s_writ_buff) printf("calloc of %d failed\n",STZX_I2S_WRITE_LEN_BYTES);
 
@@ -207,6 +210,8 @@ void stzx_send_cmd(stzx_mode_t cmd, uint8_t data)
     static uint8_t file_active=FILE_NOT_ACTIVE;
 	static size_t fsize;
 
+	if(STZX_I2S_NUM<0) return;	/* no way to send the data */
+
 	if (cmd==STZX_FILE_START){
 		if(file_active)
 			ESP_LOGE(TAG, "File double-open");
@@ -274,6 +279,10 @@ static void stzx_task(void*arg)
     size_t buffered_file_count=0;
 	uint8_t active_file=FILE_NOT_ACTIVE;
     while(1){
+		if(event_queue==NULL){
+			vTaskDelay(50 / portTICK_RATE_MS);
+			continue;
+		}
 		if(pdTRUE ==  xQueueReceive( event_queue, &evt, 10 / portTICK_RATE_MS ) ) { // todo: why need wait time here?
 			bytes_written=0;
 
@@ -300,9 +309,11 @@ static void stzx_task(void*arg)
 						active_file=FILE_NOT_ACTIVE;
 						file_busy--;
 					}
-					i2s_write(STZX_I2S_NUM, i2s_writ_buff, STZX_I2S_WRITE_LEN_BYTES, &bytes_written, 0);
-					if (bytes_written!=STZX_I2S_WRITE_LEN_BYTES){
-						ESP_LOGW(TAG, "len mismatch a, %d %d",bytes_written,STZX_I2S_WRITE_LEN_BYTES);
+					if(STZX_I2S_NUM>=0){
+						i2s_write(STZX_I2S_NUM, i2s_writ_buff, STZX_I2S_WRITE_LEN_BYTES, &bytes_written, 0);
+						if (bytes_written!=STZX_I2S_WRITE_LEN_BYTES){
+							ESP_LOGW(TAG, "len mismatch a, %d %d",bytes_written,STZX_I2S_WRITE_LEN_BYTES);
+						}
 					}
 				}
 				//if (fill_buf_from_file(i2s_writ_buff,file_data_queue,buffered_file_count)) buffered_file_count=0;

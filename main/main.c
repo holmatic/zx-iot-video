@@ -29,6 +29,7 @@
 #include "iis_videosig.h"
 #include "led_matrix.h"
 #include "lcd_display.h"
+#include "vga_display.h"
 
 /* This example demonstrates how to create file server
  * using esp_http_server. This file has only startup code.
@@ -209,6 +210,7 @@ void app_main()
     lcd_disp_init();
 
     if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
+    if(1) vga_disp_init();
 
 	wifi_sta_init(); /* needs nvs_sys_init */
 

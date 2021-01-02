@@ -21,7 +21,7 @@ static const char* TAG = "i2svid";
 
 
 //i2s number
-#define VID_I2S_NUM           (0)//1
+#define VID_I2S_NUM           (0)//1 is used by VGA..
 //i2s sample rate
 // 
 #define VID_I2S_SAMPLE_RATE   (625000) // times 32 is 20Mhz
