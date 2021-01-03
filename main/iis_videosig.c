@@ -76,7 +76,7 @@ void vid_init()
 	    .communication_format =  I2S_COMM_FORMAT_I2S_MSB,
 	    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
 	    .intr_alloc_flags = 0,
-	    .dma_buf_count = 8, // 4
+	    .dma_buf_count = 12, // 4
 	    .dma_buf_len = VID_I2S_BLOCK_LEN_SAMPLES,
 	    .use_apll = 0,//1, True cause problems at high rates (?)
 	};
@@ -115,7 +115,7 @@ void vid_init()
     ledc_set_duty(ledc_channel.speed_mode, ledc_channel.channel, 750);
     ledc_update_duty(ledc_channel.speed_mode, ledc_channel.channel);
 
-    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, 9, NULL);
+    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, 19, NULL);
 
 
 	TimerHandle_t pwm_timer;
@@ -189,9 +189,15 @@ static inline uint32_t usec_to_samples(uint32_t usecs){
 uint32_t vid_pixel_mem[10*240];
 
 
+static uint8_t video_synced_cnt=0;
+static bool video_synced_state=false;
+
+static int timeout_verbose=10;
 
 
-static uint32_t vid_get_next_data()
+
+
+static IRAM_ATTR uint32_t vid_get_next_data()
 {
 	uint32_t *rd_pt= (uint32_t* ) i2s_read_buff;
 	uint32_t d;
@@ -202,23 +208,17 @@ static uint32_t vid_get_next_data()
 		size_t bytes_read=0;
 		data_w_pos=data_w_count=0;
 		//i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_read, TickType_t ticks_to_wait);
-		ESP_ERROR_CHECK(i2s_read(VID_I2S_NUM, (void*) i2s_read_buff, VID_I2S_BLOCK_LEN_BYTES, &bytes_read, 3000 / portTICK_RATE_MS)); // should always succeed as data comes in continously
+		ESP_ERROR_CHECK(i2s_read(VID_I2S_NUM, (void*) i2s_read_buff, VID_I2S_BLOCK_LEN_BYTES*2, &bytes_read, 3000 / portTICK_RATE_MS)); // should always succeed as data comes in continously
 //		if(bytes_read>VID_I2S_BLOCK_LEN_BYTES*2-100) { ESP_LOGI(TAG," bytes_read: %d of %d ", bytes_read,VID_I2S_BLOCK_LEN_BYTES*2);}
 		data_w_count+=bytes_read/sizeof(uint32_t);
 		sfzx_periodic_check();
 	}
 	d=rd_pt[data_w_pos++];
-	if(1){ // todo only if no regular picture active
+	if(!video_synced_state){ // todo only if no regular picture active
 		sfzx_checksample(d);
 	}
 	return d;
 }
-
-static uint8_t video_synced_cnt=0;
-static bool video_synced_state=false;
-
-static int timeout_verbose=10;
-
 
 
 

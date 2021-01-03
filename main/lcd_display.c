@@ -554,12 +554,15 @@ static void display_pretty_colors(spi_device_handle_t spi)
 				send_lines(spi, y, lines[sending_line]);
 				num_upd++;
 			}
+            vTaskDelay(1);  // keep system responsive TOD make this dynamic only if VGA out is active or so...
+
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
             //touch line[sending_line]; the SPI sending process is still reading from that.
         }
 		//if(frame%200==199){ ESP_LOGI(TAG,"Upd/200frames %d \n",num_upd);num_upd=0; }
-		vTaskDelay(12 / portTICK_RATE_MS);
+		//vTaskDelay(12 / portTICK_RATE_MS);
+        vTaskDelay(1);
     }
 }
 

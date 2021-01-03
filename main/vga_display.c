@@ -22,8 +22,8 @@ static const char *TAG="vga_disp";
 
 #define PIN_NUM_MISO -1
 #define PIN_NUM_HSYNC 13  //mosi
-#define PIN_NUM_VSYNC  12  //clk
-#define PIN_NUM_GREEN   14  //cs
+#define PIN_NUM_GREEN  12  //clk
+#define PIN_NUM_VSYNC   14  //cs
 
 
 static   bool                m_DMAStarted= false;
@@ -191,20 +191,8 @@ static void setupClock(int freq)
   I2S1.clkm_conf.clka_en = 1;
 }
 
-static volatile int int_c_cnt=0;
-static int int_fr_cnt=0;
+static void IRAM_ATTR interrupt_handler(void * arg); // fwd declare
 
-static void IRAM_ATTR interrupt_handler(void * arg){
-  int_c_cnt++;
-  if (I2S1.int_st.out_eof) {
-
-    const lldesc_t* desc = (lldesc_t*) I2S1.out_eof_des_addr;
-    int_c_cnt++;
-    //if (desc == s_frameResetDesc)
-    //  s_scanLine = 0;
-  }
-  I2S1.int_clr.val = I2S1.int_st.val;
-}
 
 
 
@@ -301,14 +289,12 @@ static void play_stream(int freq, lldesc_t volatile * dmaBuffers)
     if (m_isr_handle == NULL) {
       //esp_intr_alloc_pinnedToCore(ETS_I2S1_INTR_SOURCE, ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM, interrupt_handler, NULL, &m_isr_handle, WIFI_TASK_CORE_ID ^ 1);
 
-      ESP_ERROR_CHECK(esp_intr_alloc(ETS_I2S1_INTR_SOURCE, ESP_INTR_FLAG_IRAM, &interrupt_handler, 12, &m_isr_handle));
+      ESP_ERROR_CHECK(esp_intr_alloc(ETS_I2S1_INTR_SOURCE,  ESP_INTR_FLAG_LEVEL1 |ESP_INTR_FLAG_IRAM, interrupt_handler, NULL, &m_isr_handle));
 
       I2S1.int_clr.val     = 0xFFFFFFFF;
       I2S1.int_ena.out_eof = 1;
       ESP_LOGI(TAG, "Int enabled.");
 
-      //esp_intr_enable(m_isr_handle);
-      //esp_intr_enable(&m_isr_handle);
     }
 
   }
@@ -316,10 +302,17 @@ static void play_stream(int freq, lldesc_t volatile * dmaBuffers)
 
 //	25.2 640 656 752 800 480 490 492 525 with half-rate horizontally
 
+
+
+#define SCR_CHUNK_LINES 5
+
 #define SCR_NUM_LINES 525
 #define SCR_NUM_VISIBLE_LINES 240
+
 #define SCR_LINE_VSYNC_START 490
 #define SCR_LINE_VSYNC_END 492
+
+
 #define SCR_BYTES_LINE 400
 #define SCR_BYTES_HSYNC 48
 #define SCR_BYTES_PORCH 24   // 
@@ -336,32 +329,97 @@ static uint8_t *framebuf=NULL;
 static volatile lldesc_t *dma_ll=NULL;
 
 
+
+
+static void IRAM_ATTR src_write_line_payload(uint8_t* dst, int logic_line_nr){
+  int dstix=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
+	for (int xw=0; xw<10; xw++) {
+		int ix=10*logic_line_nr+xw;
+		uint32_t m=vid_pixel_mem[ix];
+		for (int b=0; b<32; b++) {
+			uint8_t val= (m & 0x80000000) ? (HSYNC_MASK|VSYNC_MASK|WHITE_MASK) : (HSYNC_MASK|VSYNC_MASK) ;
+      dst[dstix^2]=val;
+      dstix++;
+			m<<=1;
+		}
+  }
+}
+
+static void IRAM_ATTR src_write_line_payload2(uint8_t* dst, int logic_line_nr){
+    dst+=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
+    for(int x=0;x<SCR_BYTES_VISIBLE;x++){
+        uint8_t v=HSYNC_MASK|VSYNC_MASK;
+        if(x>=logic_line_nr)  v ^= WHITE_MASK;
+        dst[x^2]=v;
+    }    
+}
+
+static void src_write_line_all(uint8_t* dst, int phys_line_nr){
+  for(int b=0;b<SCR_BYTES_LINE;b++){
+    uint8_t v=HSYNC_MASK|VSYNC_MASK;
+    if(b<SCR_BYTES_HSYNC) v&=~HSYNC_MASK;
+    if(phys_line_nr>=SCR_LINE_VSYNC_START && phys_line_nr<SCR_LINE_VSYNC_END) v &= ~VSYNC_MASK;
+    dst[b^2]=v;
+  }
+  if(phys_line_nr<SCR_NUM_VISIBLE_LINES*2){
+    src_write_line_payload(dst, phys_line_nr/2);
+  }
+}
+
+
+static volatile int int_c_cnt=0;
+static int int_fr_cnt=0;
+
+static void IRAM_ATTR interrupt_handler(void * arg){
+  if (I2S1.int_st.out_eof) {
+
+    const lldesc_t* desc = (lldesc_t*) I2S1.out_eof_des_addr;
+    if (desc == dma_ll){
+      int_fr_cnt++;
+      int_c_cnt=0;
+    } 
+    // for 0, we fill buffer 0 with 2, as this is what is next
+    uint8_t *b=&framebuf[ ((int_c_cnt&1) ? SCR_BYTES_LINE*SCR_CHUNK_LINES :0 )    ];
+    for(int l=0;l<SCR_CHUNK_LINES;l++){
+        src_write_line_payload(b, (( ((int_c_cnt+2)*SCR_CHUNK_LINES) % (SCR_NUM_VISIBLE_LINES*2) )+l )/2  );
+        b+=SCR_BYTES_LINE;
+    }
+    int_c_cnt++;
+  }
+  I2S1.int_clr.val = I2S1.int_st.val;
+}
+
+
 static void alloc_scrbuf(){
-    if(!dma_ll) dma_ll = (volatile lldesc_t *) heap_caps_malloc(sizeof(lldesc_t)*SCR_NUM_LINES, MALLOC_CAP_DMA);
-    if(!framebuf) framebuf = (uint8_t *) heap_caps_malloc(SCR_BYTES_LINE*(SCR_NUM_VISIBLE_LINES+2), MALLOC_CAP_DMA);
+    if(!dma_ll) dma_ll = (volatile lldesc_t *) heap_caps_malloc(sizeof(lldesc_t)*SCR_NUM_LINES/SCR_CHUNK_LINES, MALLOC_CAP_DMA);
+    if(!framebuf) framebuf = (uint8_t *) heap_caps_malloc( SCR_BYTES_LINE*SCR_CHUNK_LINES*(4+2) , MALLOC_CAP_DMA);
     // allocating too much RAM here kills the WLAN server (..?)
 
-    for(int line=0;line<SCR_NUM_LINES;line++){
-        volatile lldesc_t * buf=&dma_ll[line];
-        buf->eof    = line==400? 1:0;
+    for(int chunk=0;chunk<SCR_NUM_LINES/SCR_CHUNK_LINES;chunk++){
+        volatile lldesc_t * buf=&dma_ll[chunk];
+        buf->eof    = chunk < SCR_NUM_VISIBLE_LINES*2/SCR_CHUNK_LINES ? 1:0;
         buf->sosf   = 0;
         buf->owner  = 1;
-        buf->qe.stqe_next = &dma_ll[ (line+1)%SCR_NUM_LINES ]; // wrap-around
+        buf->qe.stqe_next = &dma_ll[ (chunk+1)%(SCR_NUM_LINES/SCR_CHUNK_LINES) ]; // wrap-around
         buf->offset = 0;
-        buf->size   = SCR_BYTES_LINE;
-        buf->length = SCR_BYTES_LINE;
-        int mem_line_ix=line/2;
-        if(line>=2*SCR_NUM_VISIBLE_LINES) mem_line_ix = SCR_NUM_VISIBLE_LINES;            // hsync only 
-        if(line>=SCR_LINE_VSYNC_START &&  line<SCR_LINE_VSYNC_END) mem_line_ix = SCR_NUM_VISIBLE_LINES+1;  // vsync
-        buf->buf    = &framebuf[mem_line_ix*SCR_BYTES_LINE];
+        buf->size   = SCR_BYTES_LINE*SCR_CHUNK_LINES;
+        buf->length = SCR_BYTES_LINE*SCR_CHUNK_LINES;
+        int mem_line_ix=0;
+        if(chunk < SCR_NUM_VISIBLE_LINES*2/SCR_CHUNK_LINES) mem_line_ix = chunk%2; // rolling buffer        
+        else if(chunk == SCR_LINE_VSYNC_START/SCR_CHUNK_LINES) mem_line_ix = 3;    // vsync included
+        else mem_line_ix = 2;    // hsync only 
+        buf->buf    = &framebuf[mem_line_ix*SCR_BYTES_LINE*SCR_CHUNK_LINES];
     }
-    for(int i=0;i<SCR_NUM_VISIBLE_LINES+2;i++){
-      for(int x=0;x<SCR_BYTES_LINE;x++){
-        uint8_t v=HSYNC_MASK|VSYNC_MASK;
-        if(x>=SCR_BYTES_HSYNC+SCR_BYTES_PORCH && x<SCR_BYTES_HSYNC+SCR_BYTES_PORCH+SCR_BYTES_VISIBLE && i<SCR_NUM_VISIBLE_LINES) v |= (WHITE_MASK&((x*x+i*i)/8));
-        if(x<SCR_BYTES_HSYNC)v&=~HSYNC_MASK;
-        if(i==SCR_NUM_VISIBLE_LINES+1) v&=~VSYNC_MASK;
-        framebuf[ (i*SCR_BYTES_LINE+x)^2  ]=v;    // ^2 as half words are strangely swapped...
+    /* init pixel content */
+    for(int buf_nr=0;buf_nr<2+2;buf_nr++){
+      for(int l=0;l<SCR_CHUNK_LINES;l++){
+        uint8_t *b=&framebuf[buf_nr*SCR_BYTES_LINE*SCR_CHUNK_LINES + l*SCR_BYTES_LINE   ];
+        if(buf_nr<=1)
+          src_write_line_all(b, (l+buf_nr*SCR_CHUNK_LINES)  /2  );
+        else if(buf_nr==2) 
+          src_write_line_all(b, SCR_NUM_VISIBLE_LINES*2 + l );
+        else if(buf_nr==3) 
+          src_write_line_all(b, SCR_LINE_VSYNC_START + l );
       }
     }
 
@@ -387,37 +445,18 @@ static void vga_task(void*arg)
 
     esp_err_t ret;
 
-    vTaskDelay(1000 / portTICK_RATE_MS); // allow some startup and settling time (might help, not proven)
     ESP_LOGI(TAG, "VGA-Alloc ...");        
     alloc_scrbuf();
     init_stream();
-    play_stream(12500000,dma_ll);
-
-    while(0){
-        vTaskDelay(10); // allow some startup and settling time (might help, not proven)
-    }
+    play_stream(12600000,dma_ll);
 
     int frames=0;
     while(1){
         //ESP_LOGI(TAG, "hostspi_task ...");        
-
-        vTaskDelay(10); // allow some startup and settling time (might help, not proven)
-
-
-        for(int l=0;l<SCR_NUM_VISIBLE_LINES;l++){
-          for(int x=0;x<SCR_BYTES_VISIBLE;x++){
-            uint8_t v=HSYNC_MASK|VSYNC_MASK;
-            if(x<100 || x>250 || l<50 || l>150)
-              v |= (WHITE_MASK&((x*x+l*l+frames)/16));
-            else if (l>97)
-              v |= WHITE_MASK;
-            framebuf[ (l*SCR_BYTES_LINE+x+SCR_BYTES_HSYNC+SCR_BYTES_PORCH)^2  ]=v;    // ^2 as half words are strangely swapped...
-          }
-        }
+        vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
-        if(frames%100==10){
-          vTaskDelay(2000);
-          ESP_LOGI(TAG, "VGA intcnt %d",int_c_cnt);        
+        if(frames%1000==10){
+          ESP_LOGI(TAG, "VGA intcnt %d %d",int_c_cnt,int_fr_cnt);        
         }
     }
 }

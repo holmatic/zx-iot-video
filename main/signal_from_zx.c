@@ -179,9 +179,8 @@ void sfzx_report_video_signal_status(bool vid_is_active){
 	data_vid_active=vid_is_active;
 } 
 
-
 /* every incoming 32-bit sample as long as vid_is_active=false */
-void sfzx_checksample(uint32_t data)
+void IRAM_ATTR sfzx_checksample(uint32_t data)
 {
 	if (data==0) {
 		if(actual_logic_level){

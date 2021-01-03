@@ -539,6 +539,7 @@ esp_err_t start_file_server(const char *base_path)
 
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.task_priority = 3;
 
     /* Use the URI wildcard matching function in order to
      * allow the same handler to respond to multiple different
