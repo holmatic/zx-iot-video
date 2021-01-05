@@ -256,7 +256,7 @@ static void vid_look_for_screen(){
 		} else {
 			num_1_words=0;
 		}
-		if(num_1_words>=usec_to_32bit_words(51)-1) return; // -1 was for Zeditor where sync time was prabably nonstandard..
+		if(num_1_words>=usec_to_32bit_words(51)-2) return; // -1 (later-2) was for Zeditor where sync time was prabably nonstandard..
 	}
 	video_synced_cnt=0;	
 	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_look_for_screen timeout ");timeout_verbose-=20;}
@@ -505,23 +505,26 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 	for (words_sampled=0;words_sampled<10;words_sampled++ )	
 	{
 		uint32_t outdata=0;
-		for(bits_sampled=0; bits_sampled<32; bits_sampled++)
-		{
-			uint32_t bmask;
-			outdata <<= 1;
-			while (bpos>0x200000){
-				bpos-=0x200000;
-				rawdata=vid_get_next_data();
-				*line_acc_bits+=32;
+		if(video_synced_state){
+			for(bits_sampled=0; bits_sampled<32; bits_sampled++)
+			{
+				uint32_t bmask;
+				outdata <<= 1;
+				while (bpos>0x200000){
+					bpos-=0x200000;
+					rawdata=vid_get_next_data();
+					*line_acc_bits+=32;
+				}
+				bmask = (0x80000000 >> (bpos>>16)  );
+				outdata |=  (rawdata & bmask) ? 0: 1;
+				//if(showbitmatch&&outdata) {ESP_LOGI(TAG," Bit sample %08X %08X ", bmask,rawdata);showbitmatch=0;}
+				bpos += incv;
 			}
-			bmask = (0x80000000 >> (bpos>>16)  );
-			outdata |=  (rawdata & bmask) ? 0: 1;
-			//if(showbitmatch&&outdata) {ESP_LOGI(TAG," Bit sample %08X %08X ", bmask,rawdata);showbitmatch=0;}
-			bpos += incv;
-		}
-		if(video_synced_state)
 			vid_pixel_mem[ words_sampled+pixmemoffset ]=outdata;
-		else{
+		}else{
+			outdata=vid_get_next_data();	// have no sync anyway, just do some animation quickly
+			outdata^=vid_get_next_data();
+			outdata^=vid_get_next_data();
 			if(line<12||line>228) vid_pixel_mem[ words_sampled+pixmemoffset ]= outdata;
 			else if (words_sampled==0) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0xFFF00000)|0xC0000000;
 			else if (words_sampled==9) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0x00000FFF)|0x00000003;

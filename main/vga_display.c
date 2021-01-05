@@ -392,7 +392,7 @@ static void IRAM_ATTR interrupt_handler(void * arg){
 
 static void alloc_scrbuf(){
     if(!dma_ll) dma_ll = (volatile lldesc_t *) heap_caps_malloc(sizeof(lldesc_t)*SCR_NUM_LINES/SCR_CHUNK_LINES, MALLOC_CAP_DMA);
-    if(!framebuf) framebuf = (uint8_t *) heap_caps_malloc( SCR_BYTES_LINE*SCR_CHUNK_LINES*(4+2) , MALLOC_CAP_DMA);
+    if(!framebuf) framebuf = (uint8_t *) heap_caps_malloc( SCR_BYTES_LINE*SCR_CHUNK_LINES*(2+2) , MALLOC_CAP_DMA);
     // allocating too much RAM here kills the WLAN server (..?)
 
     for(int chunk=0;chunk<SCR_NUM_LINES/SCR_CHUNK_LINES;chunk++){
@@ -456,7 +456,7 @@ static void vga_task(void*arg)
         vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
         if(frames%1000==10){
-          ESP_LOGI(TAG, "VGA intcnt %d %d",int_c_cnt,int_fr_cnt);        
+          //ESP_LOGI(TAG, "VGA intcnt %d %d",int_c_cnt,int_fr_cnt);        
         }
     }
 }

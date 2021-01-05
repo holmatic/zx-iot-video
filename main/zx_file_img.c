@@ -176,7 +176,10 @@ uint8_t zxfimg_get_img(uint16_t filepos) {
 
 void  zxfimg_set_img(uint16_t filepos,uint8_t data) {
 	if(!memimg) memimg=calloc(16384,1);
-	memimg[filepos]=data;
+	if(memimg && filepos<16384)
+		memimg[filepos]=data;
+	else
+		ESP_LOGE(TAG,"zxfimg_set_img alloc failed %d ",filepos); 
 }
 
 
