@@ -30,7 +30,7 @@ static  QueueHandle_t file_data_queue=NULL;
 
 static void send_buffer(spi_device_handle_t spi, uint8_t parallel_trans_ix, int len_bits)
 {
-    esp_err_t ret;
+    //esp_err_t ret;
 
     //Transaction descriptors. Declared static so they're not allocated on the stack; we need this memory even when this
     //function is finished because the SPI driver needs access to it even while we're already calculating the next line.
@@ -113,7 +113,7 @@ void stzx_set_out_inv_level(bool inv)
 
 static inline void set_sample(uint8_t* samplebuf, uint32_t ix, uint8_t val)
 {
-    samplebuf[ix]=val ^ 0xff;
+    samplebuf[ix]=val;
     //samplebuf[ix]=val ^ outlevel_inv;  // convert for endian byteorder
     
 	
@@ -121,27 +121,36 @@ static inline void set_sample(uint8_t* samplebuf, uint32_t ix, uint8_t val)
 }
 #if OVERSAMPLE>1
 const uint8_t wav_zero[]={  
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00
 		};
+
 const uint8_t wav_one[]={
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
-		0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
+		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00
+
 	   };
-const uint8_t wav_compr_hdr[]={ 0x00,0x00,0x00,0x00,0xff,0xff};
+const uint8_t wav_compr_hdr_std[]={ 0xff,0xff,0xff,0xff,0x00,0x00};
+const uint8_t wav_compr_hdr_inv[]={ 0x00,0x00,0x00,0x00,0xff,0xff};
+const uint8_t wav_compr_zero[]={ 0xff,0xf8}; // zx81 has iverted input (negative pulse from DC results in 0->1 reading)
+const uint8_t wav_compr_one[]={ 0x00,0x07};
+
 #else
-const uint8_t wav_zero[]={  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff};
-const uint8_t wav_one[]={  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff, 0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff,  0xff,0x00,0x00,0xff };
-const uint8_t wav_compr_hdr[]={ 0x00,0x0f};
+const uint8_t wav_zero[]={  0x00,0xff,0xff,0x00,  0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00 };
+const uint8_t wav_one[]={   0x00,0xff,0xff,0x00,  0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00, 0x00,0xff,0xff,0x00 };
+const uint8_t wav_compr_hdr_std[]={ 0xff,0xf0};
+const uint8_t wav_compr_hdr_inv[]={ 0x00,0x0f};
 #endif
 
 //const uint8_t wav_compr_hdr[]={ 0xff,0xf0};
@@ -162,24 +171,25 @@ static zxfile_wr_status_t zxfile;    // some signal statistics
 
 #define DEBUG_TRANSFERSWITCH 0   // will add some artefacts to observe the gaps between transfers in the oscilloscope
 
+#define IDLE_LEVEL 0x00
+
 
 // return true if end of file reached
 static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t buffered_filesize, uint8_t file_tag, uint32_t *actual_len_to_fill)
 {
 	bool end_f=false;
     uint32_t ix=0;
-	uint8_t smpl;
 
 #if DEBUG_TRANSFERSWITCH
-	set_sample(samplebuf,ix++,  0xaa );	// mark signal
+	set_sample(samplebuf,ix++,  0xaa );	// mark signals
 	for(int d=0;d<30;d++){
-		set_sample(samplebuf,ix++,  0x00 );
+		set_sample(samplebuf,ix++,  0xff );
 	}
 #endif
 
 	if(file_tag==FILE_NOT_ACTIVE){
 	    while(ix<MAX_WRITE_LEN_BYTES){
-			 set_sample(samplebuf,ix++,  0xff );
+			 set_sample(samplebuf,ix++,  IDLE_LEVEL );
 		}
 		if(zxfile.remaining_wavsamples) zxfile.remaining_wavsamples=zxfile.remaining_wavsamples>MAX_WRITE_LEN_BYTES? zxfile.remaining_wavsamples-MAX_WRITE_LEN_BYTES :0;
 	}else if(file_tag==FILE_TAG_COMPRESSED){
@@ -189,12 +199,17 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 		}
 	    while(ix<MAX_WRITE_LEN_BYTES) {
 			if(!zxfile.startbit_done && zxfile.remaining_wavsamples==0){
-					zxfile.wavsample=wav_compr_hdr;
-					zxfile.remaining_wavsamples=sizeof(wav_compr_hdr);
+					/* good point to possibly exit here as one full byte is done...*/
+					if(ix>MAX_WRITE_LEN_BYTES-50*OVERSAMPLE){
+						// end of packet will create a 30-60us break at low level, shorter for bigger OVERSAMPLE
+						break;
+					} 
+					zxfile.wavsample=outlevel_inv ? wav_compr_hdr_inv : wav_compr_hdr_std;
+					zxfile.remaining_wavsamples=sizeof(wav_compr_hdr_std);
 					zxfile.startbit_done=1;
 			}
 			if(zxfile.remaining_wavsamples){
-				set_sample(samplebuf,ix++, zxfile.wavsample ? *zxfile.wavsample++ : 0xff );
+				set_sample(samplebuf,ix++, zxfile.wavsample ? *zxfile.wavsample++ : IDLE_LEVEL );
 				--zxfile.remaining_wavsamples;
 			} else {
 				zxfile.wavsample=NULL; // after sample, switch back
@@ -202,34 +217,32 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 					if( (zxfile.bitcount&7) ==0){
 						if(pdTRUE != xQueueReceive( dataq, &zxfile.data, 0 ) ) ESP_LOGE(TAG, "End of data");
 					}
-					smpl=0;
 
-#if OVERSAMPLE>1
-					if(0!=(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0xff;
+#if OVERSAMPLE > 1
+					/* use != operator as logical XOR */
+					if(  (0==(zxfile.data &  (0x80 >> (zxfile.bitcount&7) ) ) ) != (outlevel_inv!=0)   ){
+						zxfile.wavsample=wav_compr_zero;  // 0 data is high level for std ZX81 
+						zxfile.remaining_wavsamples=sizeof(wav_compr_zero);
+					}else{
+						zxfile.wavsample=wav_compr_one;
+						zxfile.remaining_wavsamples=sizeof(wav_compr_one);
+					};
 					zxfile.bitcount++;
-					set_sample(samplebuf,ix++,  smpl );
-					smpl^=0x7;
-					set_sample(samplebuf,ix++,  smpl );
 #else
-					//if(0==(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0xf0;
-					if(0!=(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0xf0;
+					uint8_t smpl;
+					smpl=0;
+					if(0==(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0xf0;
 					zxfile.bitcount++;
-					//if(0==(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0x0f;
-					if(0!=(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0x0f;
+					if(0==(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0x0f;
 					zxfile.bitcount++;
-					smpl^=0x11;
+					smpl ^= outlevel_inv ? 0xee : 0x11;
 					set_sample(samplebuf,ix++,  smpl );
 #endif
 					if( (zxfile.bitcount&7) ==0){
 						zxfile.startbit_done=0;
-						/* good point to exit here as one byte is done...*/
-						if(ix>MAX_WRITE_LEN_BYTES-100){
-							//set_sample(samplebuf,ix++,  0xff );	// extra stop bits to have defined triansition, zx will wait anyway
-							break;
-						} 
 					}
 				} else {
-					set_sample(samplebuf,ix++,  0xff );
+					set_sample(samplebuf,ix++,  IDLE_LEVEL );
 					if(!end_f)	ESP_LOGW(TAG, "End compr file");
 					end_f=true;
 					break;
@@ -237,14 +250,14 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 			}
 		}
 	}else{
-		/* uncompressed, usually starts with silence */
+		/* uncompressed, starts with silence */
 		if(zxfile.bitcount==0 && !zxfile.preamble_done){
 			zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(200); // break btw files)
 			zxfile.preamble_done=1;
 		}
 	    while(ix<MAX_WRITE_LEN_BYTES) {
 			if(zxfile.remaining_wavsamples){
-				set_sample(samplebuf,ix++, zxfile.wavsample ? *zxfile.wavsample++ : 0xff );
+				set_sample(samplebuf,ix++, zxfile.wavsample ? *zxfile.wavsample++ : IDLE_LEVEL );
 				--zxfile.remaining_wavsamples;
 			} else {
 				if (zxfile.wavsample){ // after sample, always insert silence
@@ -253,12 +266,12 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 					zxfile.remaining_wavsamples=USEC_TO_BYTE_SAMPLES(1300);
 				} else {
 					if(zxfile.bitcount < buffered_filesize*8 ) {
-						/* good point to exit here as one full byte is just done...*/
+						/* good point to exit here as one bit is just done...*/
 						if(ix>MAX_WRITE_LEN_BYTES-250){
 #if DEBUG_TRANSFERSWITCH
-							set_sample(samplebuf,ix++,  0xaa );
-							for(int d=0;d<30;d++)
-								set_sample(samplebuf,ix++,  0x00 );
+							set_sample(samplebuf,ix++,  0xaa ); // mark signals
+							for(int d=0;d<50;d++)
+								set_sample(samplebuf,ix++,  0xff );
 							set_sample(samplebuf,ix++,  0x55 );
 #endif
 							break;
@@ -274,7 +287,7 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 							zxfile.remaining_wavsamples=sizeof(wav_zero);
 						}
 					} else {
-						set_sample(samplebuf,ix++,  0xff );
+						set_sample(samplebuf,ix++,  IDLE_LEVEL );
 						if(!end_f)	ESP_LOGW(TAG, "End std file");
 						end_f=true;
 						break;
@@ -290,6 +303,8 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 
 static uint8_t file_busy=0;
 
+
+// TOSO - Switch to singular call for transfering a file, as 'pipelined' transfer of multiple files is not really needed
 #define SEND_HOLDOFF_BYTES 20000  // enough so we do not run out of data on first chunk even when compressed
 
 bool stzx_is_transfer_active()
@@ -375,7 +390,7 @@ static void stzx_task(void*arg)
 			if(evt.type==(i2s_event_type_t)STZX_FILE_START){
 				buffered_file_count=evt.size;
                 if(pdTRUE != xQueueReceive( file_data_queue, &active_file, 1 ) ) ESP_LOGE(TAG, "File Tag not available");
-				ESP_LOGW(TAG, "STZX_FILE_START, %d, tag %d",buffered_file_count,active_file);
+				ESP_LOGW(TAG, "STZX_FILE_START, inv %x  %d, tag %d", outlevel_inv, buffered_file_count,active_file);
 			}
 			else if(evt.type==(i2s_event_type_t)STZX_FILE_DATA){
 				buffered_file_count=evt.size;
@@ -389,7 +404,7 @@ static void stzx_task(void*arg)
 			}
 		}
 
-		if ( (buffered_file_count&&active_file) || zxfile.remaining_wavsamples){
+		while ( (buffered_file_count && active_file) || zxfile.remaining_wavsamples){
 			uint32_t bytes_to_send=0;
 			if (fill_buf_from_file(write_buffer[active_transfer_ix],file_data_queue,buffered_file_count,active_file,&bytes_to_send )){
 				buffered_file_count=0;
@@ -412,7 +427,8 @@ static void stzx_task(void*arg)
 				/* use alternating buffers */
 				active_transfer_ix = (active_transfer_ix+1) % NUM_PARALLEL_TRANSFERS;
 			}
-		} else if (file_busy==1) file_busy=0;
+		}
+		if (file_busy==1) file_busy=0;
     }
 }
 
