@@ -5,6 +5,7 @@
 #include "esp_event_loop.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 
 #include "soc/i2s_struct.h"
 #include "soc/i2s_reg.h"
@@ -25,6 +26,7 @@ static const char *TAG="vga_disp";
 #define PIN_NUM_GREEN  12  //clk
 #define PIN_NUM_VSYNC   14  //cs
 
+//#pragma GCC optimize ("O3")   // "O3" is 49us versus 51us at standard/current default "Os"
 
 static   bool                m_DMAStarted= false;
 static   volatile lldesc_t * m_DMABuffer= NULL;
@@ -329,9 +331,43 @@ static uint8_t *framebuf=NULL;
 static volatile lldesc_t *dma_ll=NULL;
 
 
+uint8_t attr_mem_fg[40*30]; // swapped words (ix^2)
+uint8_t attr_mem_bg[40*30]; // swapped words (ix^2)
 
 
-static void IRAM_ATTR src_write_line_payload(uint8_t* dst, int logic_line_nr){
+// this is with colours and needs 51us
+static inline void IRAM_ATTR src_write_line_payload(uint8_t* dst, int logic_line_nr){
+  uint8_t fg,bg;
+	int ix=10*logic_line_nr;
+	int attr_ix=40*(logic_line_nr/8);
+  dst+=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
+
+  uint32_t mask0=0x20000000;  // int16-values are swapped!
+  uint32_t mask1=0x10000000;  // int16-values are swapped!
+  uint32_t mask2=0x80000000;  // int16-values are swapped!
+  uint32_t mask3=0x40000000;  // int16-values are swapped!
+	for (int xw=0; xw<10; xw++) {
+		uint32_t pm=vid_pixel_mem[ix++];
+    for (int c=0; c<4; c++) {
+      fg=attr_mem_fg[attr_ix];
+      bg=attr_mem_bg[attr_ix++];
+      *dst++ = (pm & mask0) ? fg : bg;
+      *dst++ = (pm & mask1) ? fg : bg;
+      *dst++ = (pm & mask2) ? fg : bg;
+      *dst++ = (pm & mask3) ? fg : bg;
+      pm<<=4;
+      *dst++ = (pm & mask0) ? fg : bg;
+      *dst++ = (pm & mask1) ? fg : bg;
+      *dst++ = (pm & mask2) ? fg : bg;
+      *dst++ = (pm & mask3) ? fg : bg;
+      pm<<=4;
+		}
+  }
+}
+
+
+
+static inline void IRAM_ATTR src_write_line_payload_55us(uint8_t* dst, int logic_line_nr){
   int dstix=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
 	for (int xw=0; xw<10; xw++) {
 		int ix=10*logic_line_nr+xw;
@@ -344,6 +380,11 @@ static void IRAM_ATTR src_write_line_payload(uint8_t* dst, int logic_line_nr){
 		}
   }
 }
+
+
+
+
+
 
 static void IRAM_ATTR src_write_line_payload2(uint8_t* dst, int logic_line_nr){
     dst+=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
@@ -369,10 +410,11 @@ static void src_write_line_all(uint8_t* dst, int phys_line_nr){
 
 static volatile int int_c_cnt=0;
 static int int_fr_cnt=0;
+int32_t isr_time_us=0;
 
 static void IRAM_ATTR interrupt_handler(void * arg){
   if (I2S1.int_st.out_eof) {
-
+    int64_t start_time = esp_timer_get_time();
     const lldesc_t* desc = (lldesc_t*) I2S1.out_eof_des_addr;
     if (desc == dma_ll){
       int_fr_cnt++;
@@ -385,12 +427,18 @@ static void IRAM_ATTR interrupt_handler(void * arg){
         b+=SCR_BYTES_LINE;
     }
     int_c_cnt++;
+    isr_time_us=esp_timer_get_time()-start_time;
   }
   I2S1.int_clr.val = I2S1.int_st.val;
 }
 
 
 static void alloc_scrbuf(){
+    for(int i=0;i<30*40;i++){
+      attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK ;
+      attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK | WHITE_MASK ;
+    } 
+
     if(!dma_ll) dma_ll = (volatile lldesc_t *) heap_caps_malloc(sizeof(lldesc_t)*SCR_NUM_LINES/SCR_CHUNK_LINES, MALLOC_CAP_DMA);
     if(!framebuf) framebuf = (uint8_t *) heap_caps_malloc( SCR_BYTES_LINE*SCR_CHUNK_LINES*(2+2) , MALLOC_CAP_DMA);
     // allocating too much RAM here kills the WLAN server (..?)
@@ -456,7 +504,7 @@ static void vga_task(void*arg)
         vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
         if(frames%1000==10){
-          //ESP_LOGI(TAG, "VGA intcnt %d %d",int_c_cnt,int_fr_cnt);        
+          ESP_LOGI(TAG, "VGA intcnt %d %d, duration %d us (%d%%)",int_c_cnt,int_fr_cnt,isr_time_us, isr_time_us/SCR_CHUNK_LINES*100/32 );        
         }
     }
 }
