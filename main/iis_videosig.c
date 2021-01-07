@@ -43,6 +43,10 @@ static const char* TAG = "i2svid";
 #define VID_PWMLEVEL_PIN           (33) // 13 make this 33 as input
 #define VID_SIGNALIN_PIN           (32) // 14 make this 32 as input ?
 
+
+
+#define STD_NUM_HDR_LINES 24   // upper header - 240 = 24+192+24
+
 static void vid_in_task(void*arg);
 static void pwm_timer_callb( TimerHandle_t xTimer );
 
@@ -324,7 +328,7 @@ static uint32_t get_pixel_adjust_nv()
 static uint32_t get_vert_line_adjust_nv()
 {
     esp_err_t err;
-    uint32_t val=26;  /* default goes here, 25 for NU, 26 for original */
+    uint32_t val=32;  /* default goes here, 31 for NU, 32 for original */
     nvs_handle my_handle;
     ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
     // Read
@@ -363,8 +367,8 @@ static void set_vert_line_adjust_nv(uint32_t newval)
 
 static uint32_t pixel_calibration_active=0;
 static uint8_t pixel_calibration_frames=0;
-static uint32_t pixel_adjust=12;		
-static uint32_t vline_adjust=24;		
+static uint32_t pixel_adjust=12; // will be set from nv-mem anyway		
+static uint32_t vline_adjust=32; // will be set from nv-mem anyway
 static uint32_t cal_pix_adj=0;		
 static bool cal_vert_adj_pending=false;		
 
@@ -382,7 +386,7 @@ static uint32_t cal_score=0;
 
 extern uint32_t vid_get_vline_offset()
 {
-	return vline_adjust;
+	return STD_NUM_HDR_LINES; //
 }
 
 
@@ -399,19 +403,20 @@ void vid_cal_pixel_start(){
 }
 
 static void calpixel_framecheck(){
+	uint32_t vline_test_adjust=26;
 	if(pixel_calibration_active){
 		if(cal_vert_adj_pending){
 			if( --pixel_calibration_frames==0){
-				for(vline_adjust=16;vline_adjust<32;vline_adjust++){
+				for(vline_test_adjust=16;vline_test_adjust<32;vline_test_adjust++){
 					/* last 4 lines are busy, check if we have the line above and below clean */
-					if(vid_pixel_mem[vline_adjust*10 + 159*10 + 1 ]==0 && vid_pixel_mem[vline_adjust*10 + 192*10 + 1 ]==0){
+					if(vid_pixel_mem[vline_test_adjust*10 + 159*10 + 1 ]==0 && vid_pixel_mem[vline_test_adjust*10 + 192*10 + 1 ]==0){
 						// vertical position match
-						ESP_LOGI(TAG," vline_adjust match for %d (default 26) ", vline_adjust);			
-						set_vert_line_adjust_nv(vline_adjust);
+						ESP_LOGI(TAG," vline_test_adjust match for %d (default 24) ", vline_test_adjust);			
+						vline_adjust += vline_test_adjust-STD_NUM_HDR_LINES; // goal is to have 24 lines above and below
+						set_vert_line_adjust_nv(vline_adjust); // depends on current setting
 						break;
 					}
 				}
-				if(vline_adjust>=32) vline_adjust=24; /* set back to default if no optimume found */
 				cal_vert_adj_pending=false;
 				pixel_calibration_frames=6;
 			}
@@ -438,16 +443,16 @@ static void calpixel_framecheck(){
 		else
 		{
 			/* checks */
-			if(vid_pixel_mem[vline_adjust*10+ 21*80]==0) cal_score++;
-			if(vid_pixel_mem[vline_adjust*10+ 21*80+1]==0xff00ff00) cal_score+=50;
-			if(vid_pixel_mem[vline_adjust*10+ 21*80+10+1]==0xff00ff00) cal_score+=50;
-			if(vid_pixel_mem[vline_adjust*10+ 21*80+20+1]==0xff00ff00) cal_score+=50;
+			if(vid_pixel_mem[STD_NUM_HDR_LINES*10+ 21*80]==0) cal_score++;
+			if(vid_pixel_mem[STD_NUM_HDR_LINES*10+ 21*80+1]==0xff00ff00) cal_score+=50;
+			if(vid_pixel_mem[STD_NUM_HDR_LINES*10+ 21*80+10+1]==0xff00ff00) cal_score+=50;
+			if(vid_pixel_mem[STD_NUM_HDR_LINES*10+ 21*80+20+1]==0xff00ff00) cal_score+=50;
 
 			/* the test screen has a chequered pattern */
 			for(uint32_t l=0; l<12; l+=1){
 				for(uint32_t w=0; w<10; w++){
 					uint32_t p,d;
-					d=vid_pixel_mem[vline_adjust*10 +  23*80+10*l+w];
+					d=vid_pixel_mem[STD_NUM_HDR_LINES*10 +  23*80+10*l+w];
 					if(w==0 || w==9)
 						p=0;
 					else
@@ -571,8 +576,8 @@ static void vid_in_task(void*arg)
 		vid_find_hsync(&line_acc_bits,&line_bits_result, true); // line_bits_result needs to be low/zero here
 		line_bits_result=0;
 		for( line=1; line<280; line++){
-			if(line>=30 && line<240+30){
-				vid_scan_line(&line_acc_bits, line-30,line_bits_inc, frame_count%500==50?0:0 );
+			if(line>=vline_adjust && line<240+vline_adjust){
+				vid_scan_line(&line_acc_bits, line-vline_adjust,line_bits_inc, frame_count%500==50?0:0 );
 			} else {
 				vid_ignore_line(&line_acc_bits);
 			}

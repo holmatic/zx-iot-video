@@ -22,9 +22,15 @@ static const char *TAG="vga_disp";
 #define GPIO_UNUSED 0xff                //!< Flag indicating that CD/WP is unused
 
 #define PIN_NUM_MISO -1
-#define PIN_NUM_HSYNC 13  //mosi
+
+
+#define PIN_NUM_RED  13  
 #define PIN_NUM_GREEN  12  //clk
-#define PIN_NUM_VSYNC   14  //cs
+#define PIN_NUM_BLUE  14  
+
+#define PIN_NUM_HSYNC 27
+#define PIN_NUM_VSYNC 26
+
 
 //#pragma GCC optimize ("O3")   // "O3" is 49us versus 51us at standard/current default "Os"
 
@@ -57,10 +63,10 @@ static void init_stream()
   m_DMAStarted = false;
   //if (div1_onGPIO0) 
   //  setupGPIO(GPIO_NUM_0,  -1, GPIO_MODE_OUTPUT);  // note: GPIO_NUM_0 cannot be changed! NOT accesible
-  setupGPIO(PIN_NUM_GREEN,   0, GPIO_MODE_OUTPUT);
-  setupGPIO(GPIO_UNUSED,   1, GPIO_MODE_OUTPUT);
-  setupGPIO(GPIO_UNUSED,   2, GPIO_MODE_OUTPUT);
-  setupGPIO(GPIO_UNUSED,  3, GPIO_MODE_OUTPUT);  // TODO
+  setupGPIO(GPIO_UNUSED,   0, GPIO_MODE_OUTPUT);
+  setupGPIO(PIN_NUM_BLUE,   1, GPIO_MODE_OUTPUT);
+  setupGPIO(PIN_NUM_GREEN,   2, GPIO_MODE_OUTPUT);
+  setupGPIO(PIN_NUM_RED,  3, GPIO_MODE_OUTPUT);
   setupGPIO(GPIO_UNUSED,  4, GPIO_MODE_OUTPUT);
   setupGPIO(GPIO_UNUSED,  5, GPIO_MODE_OUTPUT);
   setupGPIO(PIN_NUM_HSYNC, 6, GPIO_MODE_OUTPUT);
@@ -343,9 +349,9 @@ static inline void IRAM_ATTR src_write_line_payload(uint8_t* dst, int logic_line
   dst+=SCR_BYTES_HSYNC+SCR_BYTES_PORCH;
 
   uint32_t mask0=0x20000000;  // int16-values are swapped!
-  uint32_t mask1=0x10000000;  // int16-values are swapped!
-  uint32_t mask2=0x80000000;  // int16-values are swapped!
-  uint32_t mask3=0x40000000;  // int16-values are swapped!
+  uint32_t mask1=0x10000000;  
+  uint32_t mask2=0x80000000;  
+  uint32_t mask3=0x40000000;  
 	for (int xw=0; xw<10; xw++) {
 		uint32_t pm=vid_pixel_mem[ix++];
     for (int c=0; c<4; c++) {
@@ -435,8 +441,8 @@ static void IRAM_ATTR interrupt_handler(void * arg){
 
 static void alloc_scrbuf(){
     for(int i=0;i<30*40;i++){
-      attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK ;
-      attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK | WHITE_MASK ;
+      attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK | (WHITE_MASK & 4) ; // green on black
+      attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK    ;   // all-black
     } 
 
     if(!dma_ll) dma_ll = (volatile lldesc_t *) heap_caps_malloc(sizeof(lldesc_t)*SCR_NUM_LINES/SCR_CHUNK_LINES, MALLOC_CAP_DMA);
@@ -487,6 +493,30 @@ static void stop_stream()
 
 
 
+static void create_fancy_colours()
+{
+    uint8_t * pix_mem8=(uint8_t *)vid_pixel_mem;
+    for(int y=0;y<24;y++){
+      for(int x=0;x<32;x++){
+        uint8_t pattern=pix_mem8[ ( (24+2+y*8)*40 +4+x)^3 ];
+        uint8_t fg=HSYNC_MASK|VSYNC_MASK;
+        if(pattern==0x0f || pattern==0xf0 || pattern==0xff) fg|=0xe; // blocks-> white
+        else if( (pattern&0x81) == 0x81) fg|=0xc; // inverse text ->  yellow
+        else if( (pattern&0x81) == 0x81) fg|=0xc; // inverse text ->  yellow
+        else {
+          pattern=pix_mem8[ ( (24+6+y*8)*40 +4+x)^3 ];
+          if(pattern==0x0f || pattern==0xf0 || pattern==0xff) fg|=0xe; // blocks-> white
+          else if(pattern==0x55 || pattern==0xaa) fg|=0x6; // chequered-> cyan
+          else fg|=0x4;   // normal text etc-> green
+        }
+        attr_mem_fg[(3+y)*40+4+x] = fg; // green on black
+      } 
+    }
+
+
+}
+
+
 
 static void vga_task(void*arg)
 {
@@ -503,6 +533,7 @@ static void vga_task(void*arg)
         //ESP_LOGI(TAG, "hostspi_task ...");        
         vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
+        create_fancy_colours();
         if(frames%1000==10){
           ESP_LOGI(TAG, "VGA intcnt %d %d, duration %d us (%d%%)",int_c_cnt,int_fr_cnt,isr_time_us, isr_time_us/SCR_CHUNK_LINES*100/32 );        
         }
@@ -516,7 +547,7 @@ void vga_disp_init(void)
 
 
     //xTaskCreate(vga_task, "vga_task", 1024 * 4, NULL, 12, NULL);
-    xTaskCreatePinnedToCore(vga_task, "vga_task" , 1024*3, NULL, 12, NULL, WIFI_TASK_CORE_ID ^ 1);
+    xTaskCreatePinnedToCore(vga_task, "vga_task" , 1024*3, NULL, 2, NULL, WIFI_TASK_CORE_ID ^ 1);
 
 }
 
