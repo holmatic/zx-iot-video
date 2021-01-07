@@ -193,6 +193,9 @@ static inline uint32_t usec_to_samples(uint32_t usecs){
 uint32_t vid_pixel_mem[10*240];
 
 
+static int last_sync_timer=0; // set >0 when we have a sync, counts down to 0 after sync lost
+
+
 static uint8_t video_synced_cnt=0;
 static bool video_synced_state=false;
 
@@ -530,9 +533,10 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 			outdata=vid_get_next_data();	// have no sync anyway, just do some animation quickly
 			outdata^=vid_get_next_data();
 			outdata^=vid_get_next_data();
-			if(line<12||line>228) vid_pixel_mem[ words_sampled+pixmemoffset ]= outdata;
-			else if (words_sampled==0) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0xFFF00000)|0xC0000000;
-			else if (words_sampled==9) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0x00000FFF)|0x00000003;
+				if (last_sync_timer==0)  vid_pixel_mem[ words_sampled+pixmemoffset ]= outdata;
+				else if(line<12||line>228) vid_pixel_mem[ words_sampled+pixmemoffset ]= outdata;
+				else if (words_sampled==0) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0xFFF00000)|0xC0000000;
+				else if (words_sampled==9) vid_pixel_mem[ words_sampled+pixmemoffset ]= (outdata & 0x00000FFF)|0x00000003;
 		}
 		//if(show && outdata){
 		//		ESP_LOGI(TAG," Line: %d, word %d, content: %08X ", line,words_sampled,outdata);
@@ -612,6 +616,9 @@ static void vid_in_task(void*arg)
 			timeout_verbose=60;
 		}
 		frame_count++;
+		if(video_synced_state)
+			last_sync_timer=500;
+		else if(last_sync_timer) last_sync_timer--;
 	}
 
 }
