@@ -5,8 +5,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
-#include "nvs.h"
-#include "esp_spi_flash.h"
 #include "esp_system.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -408,71 +406,6 @@ static uint32_t zx_vid_hash[240*10];
 static uint32_t init_cnt=2*240/PARALLEL_LINES; // make sure first update is forced
 
 
-
-
-static void get_colours_from_nv()
-{
-    esp_err_t err;
-    nvs_handle my_handle;
-    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
-    // Read
-    err = nvs_get_u16(my_handle, "LCD_COL_FG", &fg_colour);
-    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
-        ESP_ERROR_CHECK( err );
-    }
-    err = nvs_get_u16(my_handle, "LCD_COL_BG", &bg_colour);
-    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
-        ESP_ERROR_CHECK( err );
-    }
-    nvs_close(my_handle);
-}
-
-static void store_colours_in_nv()
-{
-    nvs_handle my_handle;
-    if(1) {
-        ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
-        ESP_ERROR_CHECK( nvs_set_u16(my_handle, "LCD_COL_FG", fg_colour ) );
-        ESP_ERROR_CHECK( nvs_set_u16(my_handle, "LCD_COL_BG", bg_colour ) );
-        ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
-        nvs_close(my_handle);
-    }
-}
-
-
-
-void lcd_set_colour_cmd(char cmd, uint16_t data)
-{
-    uint16_t prev_fg=fg_colour;
-    uint16_t prev_bg=bg_colour;
-    if(cmd=='N') {
-        bg_colour=actual_colour;
-        fg_colour=BLACK;
-    }
-    if(cmd=='I'){
-        fg_colour=actual_colour;
-        bg_colour=BLACK;
-    }
-    if(cmd=='W'){
-        actual_colour=WHITE;
-    }
-    if(cmd=='G'){
-        actual_colour=0x081F;
-    }
-    if(cmd=='A'){
-        actual_colour=0x03FF;
-    }
-    if(bg_colour==BLACK) fg_colour=actual_colour;
-    else bg_colour=actual_colour;
-
-    if(fg_colour!=prev_fg || bg_colour!=prev_bg){
-        /* force update */
-        init_cnt=240/PARALLEL_LINES;
-        store_colours_in_nv();
-    }
-}
-
-
 static uint8_t *attr_mem_fg=NULL;
 static uint8_t *attr_mem_bg=NULL;
 
@@ -575,7 +508,7 @@ static void display_pretty_colors(spi_device_handle_t spi)
 				send_lines(spi, y, lines[sending_line]);
 				num_upd++;
 			}
-            vTaskDelay(1);  // keep system responsive TOD make this dynamic only if VGA out is active or so...
+            //vTaskDelay(1);  // keep system responsive TOD make this dynamic only if VGA out is active or so...
 
             //The line set is queued up for sending now; the actual sending happens in the
             //background. We can go on to calculate the next line set as long as we do not
@@ -583,14 +516,13 @@ static void display_pretty_colors(spi_device_handle_t spi)
         }
 		//if(frame%200==199){ ESP_LOGI(TAG,"Upd/200frames %d \n",num_upd);num_upd=0; }
 		//vTaskDelay(12 / portTICK_RATE_MS);
-        vTaskDelay(1);
+        vTaskDelay(5);
     }
 }
 
 void lcd_disp_init()
 {
     vidattr_get_mem(&attr_mem_fg, &attr_mem_bg);    
-    get_colours_from_nv();
     if(fg_colour==BLACK) actual_colour=bg_colour;
     else actual_colour=fg_colour;
 

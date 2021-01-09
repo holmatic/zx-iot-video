@@ -4,6 +4,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "nvs.h"
+#include "esp_spi_flash.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -39,8 +41,8 @@ static bool vmode_dark=false;
 
 
 
-uint8_t preferred_fg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_GREEN;
-uint8_t preferred_bg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_BLACK;
+static uint8_t preferred_fg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_MAGENTA;
+static uint8_t preferred_bg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_BLACK;
 
 
 static bool inv_setting=false;
@@ -71,7 +73,114 @@ static void fill_attr_mem(){
       attr_mem_fg[i] = fg ;
       attr_mem_bg[i] = bg ;
     } 
+    ESP_LOGI(TAG, "VVV fill_attr_mem  - fg %x, bg %x, fm %d, afg %x",fg,bg,fancymode_setting,attr_mem_fg[125] );        
 
+}
+
+
+
+
+
+static uint8_t get_fg_colour_from_nv(){
+    esp_err_t err;
+    uint8_t val=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_WHITE;
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u8(my_handle, "VID_COL_FG", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+   nvs_close(my_handle);
+   return val;
+}
+
+static void store_fg_colour_in_nv(uint8_t new_val){
+    if(new_val!=get_fg_colour_from_nv()){
+      nvs_handle my_handle;
+      ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+      ESP_ERROR_CHECK( nvs_set_u8(my_handle, "VID_COL_FG", new_val ) );
+      ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+      nvs_close(my_handle);
+    }
+}
+
+
+
+static uint8_t get_bg_colour_from_nv(){
+    esp_err_t err;
+    uint8_t val=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_BLACK;
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    err = nvs_get_u8(my_handle, "V_COL_BG", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+   nvs_close(my_handle);
+   return val;
+}
+
+static void store_bg_colour_in_nv(uint8_t new_val){
+    if(new_val!=get_bg_colour_from_nv()){
+      nvs_handle my_handle;
+      ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+      ESP_ERROR_CHECK( nvs_set_u8(my_handle, "V_COL_BG", new_val ) );
+      ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+      nvs_close(my_handle);
+    }
+}
+
+
+
+
+static uint8_t get_inv_colour_from_nv(){
+    esp_err_t err;
+    uint8_t val=0;
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u8(my_handle, "V_COL_INV", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+   nvs_close(my_handle);
+   return val;
+}
+
+static void store_inv_colour_in_nv(uint8_t new_val){
+    if(new_val!=get_inv_colour_from_nv()){
+      nvs_handle my_handle;
+      ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+      ESP_ERROR_CHECK( nvs_set_u8(my_handle, "V_COL_INV", new_val ) );
+      ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+      nvs_close(my_handle);
+    }
+}
+
+
+
+static uint8_t get_fancy_colour_from_nv(){
+    esp_err_t err;
+    uint8_t val=0;
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u8(my_handle, "V_COL_FANCY", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+   nvs_close(my_handle);
+   return val;
+}
+
+static void store_fancy_colour_in_nv(uint8_t new_val){
+    if(new_val!=get_fancy_colour_from_nv()){
+      nvs_handle my_handle;
+      ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+      ESP_ERROR_CHECK( nvs_set_u8(my_handle, "V_COL_FANCY", new_val ) );
+      ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+      nvs_close(my_handle);
+    }
 }
 
 
@@ -90,10 +199,9 @@ void vidattr_set_c_mode(char newcolour){
     colour_setting=newcolour;
     fancymode_setting=false; // default, may be corrected later
     preferred_bg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_BLACK;
-    applied_invert=inv_setting;
     switch(newcolour){
         case 'G': 
-          preferred_fg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_GREEN;
+          preferred_fg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_GREEN;// VIDATTR_GREEN;
           vmode_nofancy=true;
           break;
         case 'B': 
@@ -113,12 +221,18 @@ void vidattr_set_c_mode(char newcolour){
         case 'F': 
           fancymode_setting=true;
           vmode_nofancy=false;
+          inv_setting=false;
           vmode_dark=inv_setting;
           break;
         default: // no change
           break;
     }
+    applied_invert=inv_setting;
     fill_attr_mem();
+    store_fg_colour_in_nv(preferred_fg);
+    store_bg_colour_in_nv(preferred_bg);
+    store_inv_colour_in_nv(inv_setting?1:0);
+    store_fancy_colour_in_nv(fancymode_setting);
   }
 }
 
@@ -132,6 +246,7 @@ void vidattr_set_inv_mode(bool invert){
       applied_invert=inv_setting;
     fill_attr_mem();
   }
+  store_inv_colour_in_nv(inv_setting?1:0);
 }
 
 
@@ -149,7 +264,7 @@ static void create_fancy_colours()
     //uint8_t *curr_attr= attr_mem_fg;
     bool v= applied_invert;
     uint8_t *curr_attr= applied_invert ? attr_mem_bg:attr_mem_fg;
-    uint8_t TEXT_COL = v ? VIDATTR_WHITE :  VIDATTR_GREEN;
+    uint8_t TEXT_COL = v ? VIDATTR_WHITE : VIDATTR_GREEN ;// ;
     uint8_t ITEXT_COL = v ? VIDATTR_GREEN :  VIDATTR_YELLOW;
     uint8_t BLOCK_COL = v ? VIDATTR_WHITE :  VIDATTR_WHITE;
     uint8_t GREY_COL = v ? VIDATTR_RED :  VIDATTR_CYAN;
@@ -251,15 +366,25 @@ static void create_fancy_colours()
 static void vid_attr_task(void*arg)
 {
     int frames=0;
+    inv_setting=get_inv_colour_from_nv();
+    preferred_fg=get_fg_colour_from_nv();
+    preferred_bg=get_bg_colour_from_nv();
+    fancymode_setting=get_fancy_colour_from_nv();
+    applied_invert=inv_setting;
+    vmode_dark=inv_setting;
+    vmode_nofancy=true;
+    fill_attr_mem();
+    //ESP_LOGI(TAG, "VVVVVVXXVV1 Clr - fg %x, bg %x, fm %d, afg %x",preferred_fg,preferred_bg,fancymode_setting,attr_mem_fg[125] );        
+
     while(1){
         vTaskDelay(2); 
         frames++;
         if(fancymode_setting){
           create_fancy_colours();
-          if(frames%1000==10){
-            ESP_LOGI(TAG, "Avg - empty %d, dark %d, invalid %d",avg_empty_cnt,avg_dark_cnt,avg_invalid_cnt );        
-            ESP_LOGI(TAG, "Vmode Dark %d, nochar %d",vmode_dark?1:0,vmode_nofancy?1:0);        
-          }
+          //if(frames%2000==10){
+          //  ESP_LOGI(TAG, "Avg - empty %d, dark %d, invalid %d",avg_empty_cnt,avg_dark_cnt,avg_invalid_cnt );        
+          //  ESP_LOGI(TAG, "Vmode Dark %d, nochar %d",vmode_dark?1:0,vmode_nofancy?1:0);        
+          //}
         }
     }
 }

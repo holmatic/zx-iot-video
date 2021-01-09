@@ -67,82 +67,6 @@ static 	ledc_channel_config_t ledc_channel = {
 
 
 
-/**
- * @brief I2S ADC/DAC mode init.
- */
-void vid_init()
-{
-	int i2s_num = VID_I2S_NUM;
-	i2s_config_t i2s_config = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_RX,
-        .sample_rate =  VID_I2S_SAMPLE_RATE,
-        .bits_per_sample = VID_I2S_SAMPLE_BITS,
-	    .communication_format =  I2S_COMM_FORMAT_I2S_MSB,
-	    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-	    .intr_alloc_flags = 0,
-	    .dma_buf_count = 12, // 4
-	    .dma_buf_len = VID_I2S_BLOCK_LEN_SAMPLES,
-	    .use_apll = 0,//1, True cause problems at high rates (?)
-	};
-	 //install and start i2s driver
-    //xQueueCreate(5, sizeof(i2s_event_t));
-	ESP_ERROR_CHECK( i2s_driver_install(i2s_num, &i2s_config, 5, NULL/*&event_queue*/ ));
-	//init DOUT pad
-    static const i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_PIN_NO_CHANGE,     //I2S_PIN_NO_CHANGE, 18
-        .ws_io_num = I2S_PIN_NO_CHANGE,
-        .data_out_num =  I2S_PIN_NO_CHANGE , // 22
-        .data_in_num = VID_SIGNALIN_PIN      //I2S_PIN_NO_CHANGE
-    };
-    i2s_set_pin(i2s_num, &pin_config);
-    
-    i2s_read_buff=(uint8_t*) calloc(VID_I2S_BLOCK_LEN_BYTES*2, sizeof(uint8_t));
-    if(!i2s_read_buff) printf("calloc of %d failed\n",VID_I2S_BLOCK_LEN_BYTES);
-    
-	// PWM out on PIN 12 
-
-    ledc_timer_config_t ledc_timer = {
-		.duty_resolution = 10,
-        //.duty_resolution = LEDC_TIMER_13_BIT, // resolution of PWM duty
-        .freq_hz = 50000,                      // frequency of PWM signal
-        .speed_mode = LEDC_LOW_SPEED_MODE,           // timer mode
-        .timer_num = LEDC_TIMER_1,            // timer index
-        .clk_cfg = LEDC_AUTO_CLK,              // Auto select the source clock
-    };
-
-	ledc_timer_config(&ledc_timer);
-
-
-
-    // Set LED Controller with previously prepared configuration
-    ledc_channel_config(&ledc_channel);
-    ledc_set_duty(ledc_channel.speed_mode, ledc_channel.channel, 750);
-    ledc_update_duty(ledc_channel.speed_mode, ledc_channel.channel);
-
-    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, 19, NULL);
-
-
-	TimerHandle_t pwm_timer;
-	pwm_timer=xTimerCreate("VidLvlPWM",100 / portTICK_RATE_MS,pdTRUE, ( void * ) 0,pwm_timer_callb);
-	xTimerStart( pwm_timer, 100 );
-
-	// feedbak pin to 
-    gpio_config_t io_conf;
-    //disable interrupt
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    //set as output mode
-    io_conf.mode = GPIO_MODE_INPUT;
-    //bit mask of the pins that you want to set,e.g.GPIO18/19
-    io_conf.pin_bit_mask = 1ULL<<VID_PWMLEVEL_PIN | 1ULL<<VID_SIGNALIN_PIN;
-    //disable pull-down mode
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en = 0;
-    //configure GPIO with the given settings
-    gpio_config(&io_conf);
-
-
-}
-
 
 
 static void pwm_timer_callb( TimerHandle_t xTimer )
@@ -564,13 +488,12 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 
 static void vid_in_task(void*arg)
 {
-
 	bool last_video_synced_state=false;
 	uint32_t frame_count=0;
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
 	pixel_adjust=get_pixel_adjust_nv();
 	vline_adjust=get_vert_line_adjust_nv();
-    ESP_LOGI(TAG,"vid_in_task START \n");
+    ESP_LOGI(TAG,"vid_in_task START  (pixadj %d, vlineadj %d)",pixel_adjust,vline_adjust);
     while(true){
 		uint32_t line_acc_bits=0;
 		uint32_t line_bits_result=0;
@@ -598,7 +521,7 @@ static void vid_in_task(void*arg)
 				}
 			}
 
-			if(frame_count%5000==100){
+			if(frame_count%10000==100){
 				if((line==10||line==200)){
 					ESP_LOGI(TAG," Frames: %d, line: %d, linlength: %d, inc %X ", frame_count,line,line_bits_result, line_bits_inc);
 					if(frame_count<1500 && line==200){
@@ -626,3 +549,76 @@ static void vid_in_task(void*arg)
 }
 
 
+
+/**
+ * @brief I2S ADC/DAC mode init.
+ */
+void vid_init()
+{
+	int i2s_num = VID_I2S_NUM;
+	i2s_config_t i2s_config = {
+        .mode = I2S_MODE_MASTER | I2S_MODE_RX,
+        .sample_rate =  VID_I2S_SAMPLE_RATE,
+        .bits_per_sample = VID_I2S_SAMPLE_BITS,
+	    .communication_format =  I2S_COMM_FORMAT_I2S_MSB,
+	    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+	    .intr_alloc_flags = 0,
+	    .dma_buf_count = 12, // 4
+	    .dma_buf_len = VID_I2S_BLOCK_LEN_SAMPLES,
+	    .use_apll = 0,//1, True cause problems at high rates (?)
+	};
+	 //install and start i2s driver
+    //xQueueCreate(5, sizeof(i2s_event_t));
+	ESP_ERROR_CHECK( i2s_driver_install(i2s_num, &i2s_config, 5, NULL/*&event_queue*/ ));
+	//init DOUT pad
+    static const i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_PIN_NO_CHANGE,     //I2S_PIN_NO_CHANGE, 18
+        .ws_io_num = I2S_PIN_NO_CHANGE,
+        .data_out_num =  I2S_PIN_NO_CHANGE , // 22
+        .data_in_num = VID_SIGNALIN_PIN      //I2S_PIN_NO_CHANGE
+    };
+    i2s_set_pin(i2s_num, &pin_config);
+    
+    i2s_read_buff=(uint8_t*) calloc(VID_I2S_BLOCK_LEN_BYTES*2, sizeof(uint8_t));
+    if(!i2s_read_buff) printf("calloc of %d failed\n",VID_I2S_BLOCK_LEN_BYTES);
+    
+	// PWM out on PIN 12 
+
+    ledc_timer_config_t ledc_timer = {
+		.duty_resolution = 10,
+        //.duty_resolution = LEDC_TIMER_13_BIT, // resolution of PWM duty
+        .freq_hz = 50000,                      // frequency of PWM signal
+        .speed_mode = LEDC_LOW_SPEED_MODE,           // timer mode
+        .timer_num = LEDC_TIMER_1,            // timer index
+        .clk_cfg = LEDC_AUTO_CLK,              // Auto select the source clock
+    };
+
+	ledc_timer_config(&ledc_timer);
+
+    // Set LED Controller with previously prepared configuration
+    ledc_channel_config(&ledc_channel);
+    ledc_set_duty(ledc_channel.speed_mode, ledc_channel.channel, 750);
+    ledc_update_duty(ledc_channel.speed_mode, ledc_channel.channel);
+
+    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, 19, NULL);
+
+
+	TimerHandle_t pwm_timer;
+	pwm_timer=xTimerCreate("VidLvlPWM",100 / portTICK_RATE_MS,pdTRUE, ( void * ) 0,pwm_timer_callb);
+	xTimerStart( pwm_timer, 100 );
+
+	// feedbak pin to 
+    gpio_config_t io_conf;
+    //disable interrupt
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    //set as output mode
+    io_conf.mode = GPIO_MODE_INPUT;
+    //bit mask of the pins that you want to set,e.g.GPIO18/19
+    io_conf.pin_bit_mask = 1ULL<<VID_PWMLEVEL_PIN | 1ULL<<VID_SIGNALIN_PIN;
+    //disable pull-down mode
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    //configure GPIO with the given settings
+    gpio_config(&io_conf);
+
+}

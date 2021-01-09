@@ -367,7 +367,8 @@ static bool zxsrv_videooptions(const char *name, int command){
 
     /* if this is called with a nonzero cmd, we are reloading ans executing the issued command */
     if(command){
-        switch(command){
+            ESP_LOGI(TAG, "zxsrv_videooptions: %d",command);
+            switch(command){
             case 'C':
                     vid_cal_pixel_start();
                     break;
@@ -377,7 +378,6 @@ static bool zxsrv_videooptions(const char *name, int command){
             case 'F':
             case 'B':
                 vidattr_set_c_mode(command);
-                //lcd_set_colour_cmd(command,0);
                 break;
             case 'I':   
                 vidattr_set_inv_mode(true);
@@ -417,11 +417,6 @@ static bool zxsrv_videooptions(const char *name, int command){
     zxfimg_print_video(22,txt_buf);
     zxfimg_print_video(23,txt_buf);
 
-    //if(command=='C'){
-    //    sprintf(txt_buf,"##[ CALIBRATION-PLS WAIT 1 MIN ]##");
-    //    zxfimg_print_video(18,txt_buf);
-   // }
-
 
     clear_mrespond_entries();
     create_mrespond_entry(56, zxsrv_system, "INP-QU", 0 ); // "S"
@@ -432,8 +427,8 @@ static bool zxsrv_videooptions(const char *name, int command){
     create_mrespond_entry(60, zxsrv_videooptions, "VID-WH", 'W' ); // "W"
     create_mrespond_entry(44, zxsrv_videooptions, "VID-GR", 'G' ); // "G"
     create_mrespond_entry(38, zxsrv_videooptions, "VID-AM", 'A' ); // "A"
-    create_mrespond_entry(39, zxsrv_videooptions, "VID-BU", 'B' ); // "B"
     create_mrespond_entry(43, zxsrv_videooptions, "VID-FA", 'F' ); // "F"
+    create_mrespond_entry(39, zxsrv_videooptions, "VID-BU", 'B' ); // "B"
     
     /* append default entry */
     create_mrespond_entry(0, zxsrv_respond_filemenu, "/spiffs/", 0 );
