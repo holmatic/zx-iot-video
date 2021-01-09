@@ -52,5 +52,9 @@ Mkfile.old
 dkms.conf
 /build/*
 
+### input file ###
+zx81rom.bin
+
 ### VisualStudioCode ###
 .vscode/*
+
