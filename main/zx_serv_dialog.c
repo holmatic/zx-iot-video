@@ -27,7 +27,8 @@ Works asynchroously, thus communication is done via queues
 #include "zx_file_img.h"
 #include "signal_to_zx.h"
 #include "iis_videosig.h"
-#include "lcd_display.h"
+#include "lcd_display.h"//TODO
+#include "video_attr.h"
 #include "zx_server.h"
 #include "wifi_sta.h"
 #include "zx_serv_dialog.h"
@@ -370,12 +371,19 @@ static bool zxsrv_videooptions(const char *name, int command){
             case 'C':
                     vid_cal_pixel_start();
                     break;
-            case 'I':   /* all fall threough */
-            case 'N':
             case 'W':
             case 'G':
             case 'A':
-                lcd_set_colour_cmd(command,0);
+            case 'F':
+            case 'B':
+                vidattr_set_c_mode(command);
+                //lcd_set_colour_cmd(command,0);
+                break;
+            case 'I':   
+                vidattr_set_inv_mode(true);
+                break;
+            case 'N':
+                vidattr_set_inv_mode(false);
                 break;
             default:
                 break;
@@ -392,13 +400,13 @@ static bool zxsrv_videooptions(const char *name, int command){
     sprintf(txt_buf,"###[ ZX-WESPI VIDEO SETTINGS ]###");
     zxfimg_print_video(4,txt_buf);
 
-    sprintf(txt_buf," [C] CALIBRATE PIXEL PHASE");
+    sprintf(txt_buf," [C]ALIBRATE PIXEL PHASE");
     zxfimg_print_video(7,txt_buf);
 
     sprintf(txt_buf," [I]NVERSE OR [N]ORMAL");
     zxfimg_print_video(10,txt_buf);
 
-    sprintf(txt_buf," [W]HITE, [G]REEN, OR [A]MBER");
+    sprintf(txt_buf," [W]HITE, [G]REEN, [A]MBER, or [F]ANCY");
     zxfimg_print_video(12,txt_buf);
 
     /* the last four lines need to be excactly this way as the patterns are used by the calibration */
@@ -424,6 +432,8 @@ static bool zxsrv_videooptions(const char *name, int command){
     create_mrespond_entry(60, zxsrv_videooptions, "VID-WH", 'W' ); // "W"
     create_mrespond_entry(44, zxsrv_videooptions, "VID-GR", 'G' ); // "G"
     create_mrespond_entry(38, zxsrv_videooptions, "VID-AM", 'A' ); // "A"
+    create_mrespond_entry(39, zxsrv_videooptions, "VID-BU", 'B' ); // "B"
+    create_mrespond_entry(43, zxsrv_videooptions, "VID-FA", 'F' ); // "F"
     
     /* append default entry */
     create_mrespond_entry(0, zxsrv_respond_filemenu, "/spiffs/", 0 );

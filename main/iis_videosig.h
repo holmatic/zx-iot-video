@@ -12,6 +12,7 @@
 // call once at startup
 void vid_init();
 void vid_cal_pixel_start();
+bool vid_is_synced();
 extern uint32_t vid_pixel_mem[];
 
 /* number of top-header lines before actual standard-character screen starts*/

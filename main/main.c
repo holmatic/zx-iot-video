@@ -27,6 +27,7 @@
 #include "signal_to_zx.h"
 #include "wifi_sta.h"
 #include "iis_videosig.h"
+#include "video_attr.h"
 #include "led_matrix.h"
 #include "lcd_display.h"
 #include "vga_display.h"
@@ -210,6 +211,8 @@ void app_main()
     lcd_disp_init();
 
     if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
+    
+    video_attr_init();
     if(1) vga_disp_init();
 
 	wifi_sta_init(); /* needs nvs_sys_init */

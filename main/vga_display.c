@@ -15,6 +15,7 @@
 
 #include "driver/gpio.h"
 #include "iis_videosig.h"
+#include "video_attr.h"
 #include "vga_display.h"
 
 static const char *TAG="vga_disp";
@@ -335,10 +336,8 @@ static void play_stream(int freq, lldesc_t volatile * dmaBuffers)
 
 static uint8_t *framebuf=NULL;
 static volatile lldesc_t *dma_ll=NULL;
-
-
-uint8_t attr_mem_fg[40*30]; // swapped words (ix^2)
-uint8_t attr_mem_bg[40*30]; // swapped words (ix^2)
+static uint8_t *attr_mem_fg=NULL;
+static uint8_t *attr_mem_bg=NULL;
 
 
 // this is with colours and needs 51us
@@ -492,8 +491,136 @@ static void stop_stream()
 }
 
 
+#define VBITMAP_IS_VALID_CHAR_L2 0x01
+#define VBITMAP_IS_BLOCK_CHAR_L2 0x04
+#define VBITMAP_IS_GREY_CHAR_L2  0x08
+#define VBITMAP_IS_INV_CHAR_L2   0x02
+#define VBITMAP_IS_BLOCK_CHAR_L6 0x40
+#define VBITMAP_IS_GREY_CHAR_L6  0x80
 
-static void create_fancy_colours()
+/* For the standard ZX81 charset, every possible bit map pattern (when looking at line 2 or 6 of the character) maps to flags that show if this is a valid char, and possible also if it is graphics etc */
+
+
+const uint8_t vbitm_flags[256]={0x01,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x45,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x89,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x89,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x00,0x03,0x00,0x03,0x00,0x03,0x00,0x03,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x03,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x03,0x45,0x00,0x00,0x00,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x03,0x00,0x03,0x00,0x45};
+
+static int avg_empty_cnt=0;
+static int avg_invalid_cnt=0;
+static int avg_dark_cnt=0;
+
+static bool vmode_nochars=false;
+static bool vmode_dark=false;
+
+
+static void create_fancy_colours3()
+{
+    uint8_t * pix_mem8=(uint8_t *)vid_pixel_mem;
+    int empty_cnt=0;
+    int invalid_cnt=0;
+    int dark_cnt=0;
+    static uint8_t switchmode_holdoff=2;
+    uint8_t *curr_attr= vmode_dark ? attr_mem_bg:attr_mem_fg;
+    for(int y=0;y<24;y++){
+      /* check for overscan */
+      if(pix_mem8[ ( (24+2+y*8)*40 + 3)^3 ]) invalid_cnt+=4;
+      for(int x=0;x<32;x++){
+        uint8_t pattern=pix_mem8[ ( (24+2+y*8)*40 +4+x)^3 ];
+        uint8_t fg=HSYNC_MASK|VSYNC_MASK;
+        uint8_t flags;
+        if(pattern!=0){
+          /* upper part not empty */
+          flags=vbitm_flags[pattern];
+          if(0 == (flags&VBITMAP_IS_VALID_CHAR_L2) ){
+            fg|=0x4;  /* empty or normal text */
+            invalid_cnt++; /* maybe high-res or so, nothing that fancy colours work with.. */
+          } else if ( flags&VBITMAP_IS_BLOCK_CHAR_L2 ){
+            fg|=0xe; // blocks-> white
+            if(pattern==0xff) dark_cnt++;
+          } else if ( flags&VBITMAP_IS_INV_CHAR_L2 ){
+            fg|=0xc; // inverse text ->  yellow
+            dark_cnt++;
+          } else if ( flags&VBITMAP_IS_GREY_CHAR_L6 ){
+            fg|=0x6; // chequered-> cyan
+          }else{
+            fg|=0x4;  /* some normal text */
+          }
+        }else{
+          /* upper part just empty */
+          pattern=pix_mem8[ ( (24+6+y*8)*40 +4+x)^3 ];
+          if(pattern==0){
+              empty_cnt++;
+              fg|=0x4;  /* empty or some normal text */
+          } else {
+            flags=vbitm_flags[pattern];
+            if ( flags&VBITMAP_IS_BLOCK_CHAR_L6 ){
+              fg|=0xe; // blocks-> white
+              if(pattern==0xff) dark_cnt++;
+            } else if ( flags&VBITMAP_IS_GREY_CHAR_L6 ){
+              fg|=0x6; // chequered-> cyan
+            }else{
+              fg|=0x4;  /* empty or some normal text */
+            }
+          } 
+        }
+        if(!vmode_nochars) curr_attr[(3+y)*40+4+x] = fg; // green on black
+      } 
+    }
+    
+    avg_empty_cnt=   (7*avg_empty_cnt + empty_cnt) /8;
+    avg_invalid_cnt= (7*avg_invalid_cnt + invalid_cnt) /8;
+    avg_dark_cnt=    (7*avg_dark_cnt  + dark_cnt) /8;
+
+    if(switchmode_holdoff) {
+      switchmode_holdoff--;
+    } else {
+      if(vmode_nochars){
+        // check if screen looks like regular characters again
+        if(avg_invalid_cnt<2 || avg_invalid_cnt*16 < (768-avg_empty_cnt) ){
+            vmode_nochars=false;
+            switchmode_holdoff=50;
+        }
+      } else {
+        // check if screen looks like HRG or invalid
+        if(avg_invalid_cnt > 4 && avg_invalid_cnt*8 > (768-avg_empty_cnt) ){
+            vmode_nochars=true;
+            switchmode_holdoff=50;
+            // remove colour info
+            for(int i=0;i<30*40;i++){
+              attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK | (WHITE_MASK) ; // white on black
+              attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK    ;   // all-black
+            } 
+        }
+      }
+
+      if(vmode_dark){
+        // check if screen looks normal/bright
+        if(avg_dark_cnt<284){
+            vmode_dark=false;
+            switchmode_holdoff=50;
+            // remove colour info
+            for(int i=0;i<30*40;i++){
+              attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK | (WHITE_MASK) ; // white on black
+              attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK    ;   // all-black
+            } 
+        }
+      } else {
+        // check if screen looks dark by inverse
+        if(avg_dark_cnt > 484){
+            vmode_dark=true;
+            switchmode_holdoff=50;
+            for(int i=0;i<30*40;i++){
+              attr_mem_fg[i] = HSYNC_MASK|VSYNC_MASK ; // white on black
+              attr_mem_bg[i] = HSYNC_MASK|VSYNC_MASK | (WHITE_MASK)   ;
+            } 
+        }
+      }
+    }
+
+}
+
+
+
+
+static void create_fancy_colours_conventional()
 {
     uint8_t * pix_mem8=(uint8_t *)vid_pixel_mem;
     for(int y=0;y<24;y++){
@@ -524,6 +651,7 @@ static void vga_task(void*arg)
     esp_err_t ret;
 
     ESP_LOGI(TAG, "VGA-Alloc ...");        
+    vidattr_get_mem(&attr_mem_fg, &attr_mem_bg);
     alloc_scrbuf();
     init_stream();
     play_stream(12600000,dma_ll);
@@ -533,9 +661,11 @@ static void vga_task(void*arg)
         //ESP_LOGI(TAG, "hostspi_task ...");        
         vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
-        create_fancy_colours();
+        //create_fancy_colours();
         if(frames%1000==10){
           ESP_LOGI(TAG, "VGA intcnt %d %d, duration %d us (%d%%)",int_c_cnt,int_fr_cnt,isr_time_us, isr_time_us/SCR_CHUNK_LINES*100/32 );        
+          ESP_LOGI(TAG, "Avg - empty %d, dark %d, invalid %d",avg_empty_cnt,avg_dark_cnt,avg_invalid_cnt );        
+          ESP_LOGI(TAG, "Vmode dark %d, nochar %d",vmode_dark?1:0,vmode_nochars?1:0);        
         }
     }
 }

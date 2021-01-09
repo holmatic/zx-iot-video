@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "video_attr.h"
 #include "iis_videosig.h"
 #include "lcd_display.h"
 
@@ -62,9 +63,7 @@ typedef enum {
 
 
 
-//画笔颜色
-#define WHITE         	 0xFFFF
-#define BLACK         	 0x0000	  
+/*
 #define BLUE         	 0x001F  
 #define BRED             0XF81F
 #define GRED 			 0XFFE0
@@ -74,21 +73,15 @@ typedef enum {
 #define GREEN         	 0x07E0
 #define CYAN          	 0x7FFF
 #define YELLOW        	 0xFFE0
-#define BROWN 			 0XBC40 //棕色
-#define BRRED 			 0XFC07 //棕红色
-#define GRAY  			 0X8430 //灰色
-//GUI颜色
+*/
+//        actual_colour=0x081F; // green
+        //actual_colour=0x03FF;  // yellow
 
-#define DARKBLUE      	 0X01CF	//深蓝色
-#define LIGHTBLUE      	 0X7D7C	//浅蓝色  
-#define GRAYBLUE       	 0X5458 //灰蓝色
-//以上三色为PANEL的颜色 
- 
-#define LIGHTGREEN     	 0X841F //浅绿色
-#define LGRAY 			 0XC618 //浅灰色(PANNEL),窗体背景色
-
-#define LGRAYBLUE        0XA651 //浅灰蓝色(中间层颜色)
-#define LBBLUE           0X2B12 //浅棕蓝色(选择条目的反色)
+#define WHITE         	 0xFFFF
+#define BLACK         	 0x0000	  
+#define BLUE         	 0x1F00  
+#define GREEN         	 0xE007
+#define RED           	 0x00F8
 
 
 static uint16_t fg_colour=BLACK;
@@ -479,16 +472,37 @@ void lcd_set_colour_cmd(char cmd, uint16_t data)
     }
 }
 
+
+static uint8_t *attr_mem_fg=NULL;
+static uint8_t *attr_mem_bg=NULL;
+
+static uint16_t trans_colour(uint8_t rgb_colour ){
+    uint16_t v=0;
+    if(rgb_colour&VIDATTR_RED) v|= RED;
+    if(rgb_colour&VIDATTR_GREEN) v|= GREEN;
+    if(rgb_colour&VIDATTR_BLUE) v|= BLUE;
+    return v;
+}
+
+
+static int32_t zx_attr_hash[30];  // attribute hash per line
+
 static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
 {
 	bool update=false;
-	uint16_t val=0;
+	uint16_t fg,bg,val=0;
 	uint32_t m;
 	int ix;
 	/* first check if we need an update */
 	if(init_cnt) {update=true; init_cnt--; }
 	for (int y=line; y<line+linect; y++) {
 		if (update) break;
+        if((y&7)==0){
+            int aix=(40*(y/8));
+            int32_t hash=0;
+            for(int i=0;i<40;i++) { hash+=attr_mem_fg[aix]-attr_mem_bg[aix]; aix++;  }
+            if(hash!=zx_attr_hash[y/8]) {update=true; break;};
+        }
 		for (int xw=0; xw<10; xw++) {
 			if (update) break;
 			ix=10*y+xw;
@@ -500,16 +514,23 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
 	if(!update) return false;
 	/* do the actual update */
 	for (int y=line; y<line+linect; y++) {
+        int aix=(40*(y/8));
 		for (int xw=0; xw<10; xw++) {
+            int32_t attrhash=0;
 			ix=10*y+xw;
 			m=zx_vid_hash[ix]=vid_pixel_mem[ix];
-			for (int b=0; b<32; b++) {
-				//val= (m & 0x80000000) ? 0x081F : 0x0000 ;
-				//val= (m & 0x80000000) ? 0x0000 : 0xFFFF ;
-				val= (m & 0x80000000) ? fg_colour : bg_colour ;
-				*dest++ = val  ;
-				m<<=1;
-			}
+			for (int c=0; c<4; c++) {
+                attrhash+=attr_mem_fg[aix]-attr_mem_bg[aix];
+                fg=trans_colour(attr_mem_fg[aix]);
+                bg=trans_colour(attr_mem_bg[aix]);
+                for (int b=0; b<8; b++) {
+                    val= (m & 0x80000000) ? fg:bg ;
+                    *dest++ = val  ;
+                    m<<=1;
+                }
+                aix++;
+            }
+            zx_attr_hash[y/8]=attrhash;
 		}
 	}
 	return true;
@@ -568,6 +589,7 @@ static void display_pretty_colors(spi_device_handle_t spi)
 
 void lcd_disp_init()
 {
+    vidattr_get_mem(&attr_mem_fg, &attr_mem_bg);    
     get_colours_from_nv();
     if(fg_colour==BLACK) actual_colour=bg_colour;
     else actual_colour=fg_colour;

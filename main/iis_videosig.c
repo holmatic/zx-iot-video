@@ -202,7 +202,9 @@ static bool video_synced_state=false;
 static int timeout_verbose=10;
 
 
-
+bool vid_is_synced(){
+	return video_synced_state;
+}
 
 static IRAM_ATTR uint32_t vid_get_next_data()
 {

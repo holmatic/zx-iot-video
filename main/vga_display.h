@@ -6,7 +6,6 @@
 #include "esp_err.h"
 #include <esp_types.h>
 #include "esp_attr.h"
-#include "freertos/queue.h"
 
 
 // call once at startup
