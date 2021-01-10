@@ -26,7 +26,7 @@ static const char *TAG="vga_disp";
 
 
 #define PIN_NUM_RED  13  
-#define PIN_NUM_GREEN  12  //clk
+#define PIN_NUM_GREEN  12  
 #define PIN_NUM_BLUE  14  
 
 #define PIN_NUM_HSYNC 27
