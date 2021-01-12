@@ -434,7 +434,11 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
             int aix=(40*(y/8));
             int32_t hash=0;
             for(int i=0;i<40;i++) { hash+=attr_mem_fg[aix]-attr_mem_bg[aix]; aix++;  }
-            if(hash!=zx_attr_hash[y/8]) {update=true; break;};
+            if(hash!=zx_attr_hash[y/8]) {
+                update=true;
+                ESP_LOGI(TAG,"Attr update %x vs %X ",hash,zx_attr_hash[y/8]);
+                break;
+            }
         }
 		for (int xw=0; xw<10; xw++) {
 			if (update) break;
@@ -448,8 +452,8 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
 	/* do the actual update */
 	for (int y=line; y<line+linect; y++) {
         int aix=(40*(y/8));
+        int32_t attrhash=0;
 		for (int xw=0; xw<10; xw++) {
-            int32_t attrhash=0;
 			ix=10*y+xw;
 			m=zx_vid_hash[ix]=vid_pixel_mem[ix];
 			for (int c=0; c<4; c++) {
@@ -463,8 +467,8 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
                 }
                 aix++;
             }
-            zx_attr_hash[y/8]=attrhash;
 		}
+        zx_attr_hash[y/8]=attrhash;
 	}
 	return true;
 }
