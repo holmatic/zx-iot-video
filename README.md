@@ -18,6 +18,12 @@ ESP32-based modules are often used whenever it comes down to electronics control
 
 ![Schematic outline](doc/zx-iot-video-sketch.png "How to connect ZX, ESP32, and TFT Display")
 
+
+
+_McKlaud_ kindly provided more professional drawings (great thanks !) : ![Schematic outline](doc/ZX-WESPI-VIDEO_sch_v0.2_by_McKlaud.pdf "ZX-Wespi-Video Schematics")
+
+
+
 ### Optional VGA Output _(new!)_ ###
 
 Starting from software version v0.6, a simple VGA interface for  standard monitors is supported. 
