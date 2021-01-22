@@ -28,7 +28,7 @@ static int last_level=0;   // colour, adjust
 #define LONG_KEYPRESS_TICKS 80
 #define REPEAT_TICKS 30
 #define DEBOUNCE_TICKS 10
-#define EXPIRE_TICKS 250
+#define EXPIRE_TICKS 300
 
 static const char* colour_lookup="WWGGYYBBFF";
 static uint8_t colour_tog_ix=0;  

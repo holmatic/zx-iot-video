@@ -270,6 +270,35 @@ static uint32_t get_vert_line_adjust_nv()
 }
 
 
+
+static uint32_t get_clocks_per_line_nv()
+{
+    esp_err_t err;
+    uint32_t val=414;  /* default goes here, 414 for ZX, 416 for ACE */
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u32(my_handle, "VID_CLK_P_LIN", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+    nvs_close(my_handle);
+    return val;
+}
+
+
+static void set_clocks_per_line_nv(uint32_t newval)
+{
+    nvs_handle my_handle;
+    if(get_clocks_per_line_nv() != newval) {
+        ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+        ESP_ERROR_CHECK( nvs_set_u32(my_handle, "VID_CLK_P_LIN", newval ) );
+        ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+        nvs_close(my_handle);
+    }
+}
+
+
 static void set_pixel_adjust_nv(uint32_t newval)
 {
     nvs_handle my_handle;
@@ -329,6 +358,7 @@ void vid_cal_pixel_start(){
 	cal_pix_adj=0;
 	pixel_calibration_active=200;
 	pixel_calibration_frames=10;
+	pixels_per_vline=414; 	/* this procedure is currently only started fro ZX, not ACE, so fall back */
 	cal_pix_adj=pixel_calibration_active;
 	cal_pix_bestadj_val=0;
 	for(int i=0;i<2*CAL_FILT_HSIZ+1;i++) cal_pix_filter[i]=0;
@@ -403,6 +433,7 @@ static void calpixel_framecheck(){
 			pixel_calibration_active=0;
 			ESP_LOGI(TAG," Done: Optimum is at %d.", cal_pix_bestadj_pos);	
 			set_pixel_adjust_nv(cal_pix_bestadj_pos);		
+			set_clocks_per_line_nv(pixels_per_vline);
 			pixel_adjust=cal_pix_bestadj_pos;
 		}
 	}
@@ -498,6 +529,7 @@ static void vid_in_task(void*arg)
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
 	pixel_adjust=get_pixel_adjust_nv();
 	vline_adjust=get_vert_line_adjust_nv();
+	pixels_per_vline=get_clocks_per_line_nv();
     ESP_LOGI(TAG,"vid_in_task START  (pixadj %d, vlineadj %d)",pixel_adjust,vline_adjust);
     while(true){
 		uint32_t line_acc_bits=0;
@@ -554,25 +586,26 @@ static void vid_in_task(void*arg)
 		if(pending_user_adj){
 			if(pending_user_adj-- ==1){
 				// store current settings
+				set_pixel_adjust_nv(cal_pix_bestadj_pos);		
+				set_clocks_per_line_nv(pixels_per_vline);
 			}
 		}
 	}
-
 }
 
 
 void vid_user_scr_adj_event()
 {
 	if(pending_user_adj==0){
-		pixels_per_vline=416;	// switch to jupiter
-		pixel_adjust+=14;  // Heinz report that he needed 3 steps of 7
+		pixels_per_vline=416;	/* manual alignment nomally not one for ZX, so switch to Jupiter ACE */
+		pixel_adjust+=14; 		/* Heinz reported that he needed 3 manual steps of 7 for his ACE, so +14 here to make is roughly be the first step */
 	}
 	pixel_adjust+=7;
 	if(pixel_adjust > 220){
 		pixel_adjust-= 141; // cycle through adjust range 
-		pixels_per_vline = pixels_per_vline==416 ? 414:416;	// toggle zx/ace
+		pixels_per_vline = pixels_per_vline==416 ? 414:416;	// toggle zx/ace for every second loop
 	}
-	pending_user_adj=200;
+	pending_user_adj=500; /* after adjustment plus 10 sec inactivity, write results to nv */
 }
 
 
