@@ -14,6 +14,7 @@
 #include "driver/ledc.h"
 #include "esp_adc_cal.h"
 #include "zx_server.h"
+#include "user_knob.h"
 #include "signal_from_zx.h"
 
 
@@ -42,7 +43,6 @@ static const char* TAG = "i2svid";
 #define VID_PWMO_PIN	           (25) // 12 make this 25?
 #define VID_PWMLEVEL_PIN           (33) // 13 make this 33 as input
 #define VID_SIGNALIN_PIN           (32) // 14 make this 32 as input ?
-
 
 
 #define STD_NUM_HDR_LINES 24   // upper header - 240 = 24+192+24
@@ -298,6 +298,11 @@ static uint32_t pixel_calibration_active=0;
 static uint8_t pixel_calibration_frames=0;
 static uint32_t pixel_adjust=12; // will be set from nv-mem anyway		
 static uint32_t vline_adjust=32; // will be set from nv-mem anyway
+
+static uint32_t pixels_per_vline=414; // is 414 for ZX, 416 for Jupiter
+
+
+
 static uint32_t cal_pix_adj=0;		
 static bool cal_vert_adj_pending=false;		
 
@@ -484,7 +489,7 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 	*/
 }
 
-
+static uint8_t pending_user_adj=0;
 
 static void vid_in_task(void*arg)
 {
@@ -516,7 +521,7 @@ static void vid_in_task(void*arg)
 				line_bits_acc+=line_bits_result;
 				lbcount++;
 				if(lbcount==20){
-					line_bits_inc = (line_bits_acc<<16)/(20*414);	/* one zxline is 207 cpu cycles=414 pixel, 10 times avg */
+					line_bits_inc = (line_bits_acc<<16)/(20*pixels_per_vline);	/* one zxline is 207 cpu cycles=414 pixel, 10 times avg */
 					calc_startpos_for_frame(line_bits_inc); 
 				}
 			}
@@ -541,13 +546,34 @@ static void vid_in_task(void*arg)
 			timeout_verbose=60;
 		}
 		frame_count++;
-		if(video_synced_state)
+		if(video_synced_state){
 			last_sync_timer=500;
+		}
 		else if(last_sync_timer) last_sync_timer--;
+		user_knob_periodic_check();
+		if(pending_user_adj){
+			if(pending_user_adj-- ==1){
+				// store current settings
+			}
+		}
 	}
 
 }
 
+
+void vid_user_scr_adj_event()
+{
+	if(pending_user_adj==0){
+		pixels_per_vline=416;	// switch to jupiter
+		pixel_adjust+=14;  // Heinz report that he needed 3 steps of 7
+	}
+	pixel_adjust+=7;
+	if(pixel_adjust > 220){
+		pixel_adjust-= 141; // cycle through adjust range 
+		pixels_per_vline = pixels_per_vline==416 ? 414:416;	// toggle zx/ace
+	}
+	pending_user_adj=200;
+}
 
 
 /**
@@ -620,5 +646,7 @@ void vid_init()
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
     gpio_config(&io_conf);
+
+
 
 }

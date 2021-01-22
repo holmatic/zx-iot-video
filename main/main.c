@@ -28,6 +28,7 @@
 #include "wifi_sta.h"
 #include "iis_videosig.h"
 #include "video_attr.h"
+#include "user_knob.h"
 #include "led_matrix.h"
 #include "lcd_display.h"
 #include "vga_display.h"
@@ -207,6 +208,7 @@ void app_main()
     zxsrv_init();
     stzx_init();
     sfzx_init();
+    user_knob_init();
     vid_init();
     lcd_disp_init();
 

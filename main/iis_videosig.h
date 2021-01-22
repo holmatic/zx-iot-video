@@ -12,6 +12,7 @@
 // call once at startup
 void vid_init();
 void vid_cal_pixel_start();
+void vid_user_scr_adj_event();  
 bool vid_is_synced();
 extern uint32_t vid_pixel_mem[];
 
