@@ -87,7 +87,7 @@ static void zxfile_bit(uint8_t bitval)
     }
 }
 
-static void zxfile_check_bit_end()
+static void zxfile_check_bit_end(uint32_t duration)
 {
     //if(zxfile.bytecount%50==2) printf(" ZXFile bit %d pulses (%d us) \n",zxfile.pulscount,samples_to_usec(level.duration) );
     // test have shown that the 4 and 9 pulses are retrieved quite precisely, nevertheless add some tolerance
@@ -98,7 +98,7 @@ static void zxfile_check_bit_end()
         zxfile_bit(1);
     }
     else{
-        ESP_LOGI(TAG,"File read retrieved %d pulses, cancel\n",zxfile.pulscount);
+        ESP_LOGI(TAG,"File read retrieved %d pulses (dur %d us), cancel\n",zxfile.pulscount,samples_to_usec(duration));
         zxfile.state=ZXFS_INIT;
     }
     zxfile.pulscount=0;
@@ -113,6 +113,9 @@ static void analyze_1_to_0(uint32_t duration)
 			++zxfile.pulscount;
 		}
 	}
+
+
+
 }
 
 
@@ -129,7 +132,7 @@ static void analyze_0_to_1(uint32_t duration)
 		if(duration<USEC_TO_SAMPLES(250)){
 				// okay, gap should be 150u for pules
 		} else if (duration>USEC_TO_SAMPLES(1200) && duration<USEC_TO_SAMPLES(1800)){ // 1.3ms+0.15
-			zxfile_check_bit_end();
+			zxfile_check_bit_end(duration);
 		}
 		else
 		{
@@ -149,13 +152,12 @@ static void analyze_0_to_1(uint32_t duration)
 	if(zxfile.state<ZXFS_HDR_RECEIVED && duration>MILLISEC_TO_SAMPLES(60))
 	{
 		// end of long break, could be header of file
+		ESP_LOGI(TAG,"Possibly file header 01   (%d ms) \n", samples_to_usec(duration)/1000);
 		memset(&zxfile,0,sizeof(zxfile_rec_status_t));
 		zxfile.state=ZXFS_HDR_RECEIVED;
 	}
 }
 
-static uint32_t data_num_0=0;
-static uint32_t data_num_1=0;
 static uint32_t data_num_short_0=0;
 
 
@@ -169,9 +171,8 @@ static uint32_t acc_holdoff_cnt=0;
 /* report if we have a regular video signal or are in FAST/LOAD/SAVE/ect */
 void sfzx_report_video_signal_status(bool vid_is_active){
 	if(data_vid_active!=vid_is_active){
-		data_num_0=1;
-		data_num_1=1;
 		level_cnt=holdoff_cnt=0;
+		actual_logic_level=0;
 		zxfile.state=ZXFS_INIT;
 		ESP_LOGI(TAG,"Video signal status: %s\n", vid_is_active?"active":"inactive" );
 		if(vid_is_active) set_det_phase(ZXSG_SLOWM_50HZ);
@@ -213,38 +214,6 @@ void IRAM_ATTR sfzx_checksample(uint32_t data)
 	} 
 }
 
-
-void sfzx_checksample2(uint32_t data)
-{
-	if (data==0) {
-		data_num_0++;
-		if( data_num_1 ){
-			if (data_num_0 > USEC_TO_SAMPLES(14) ){
-				// not just hsync, have 1-to-0
-				analyze_1_to_0(data_num_1);
-				data_num_1=0;
-				data_num_short_0=0;
-			} else {
-				data_num_short_0++;
-				data_num_1++; // count for continuation through hsync
-			}
-		}
-	} else if (data==0xffffffff){
-		data_num_1++;
-		if(data_num_0> USEC_TO_SAMPLES(14)){
-			// have 0-to-1
-			analyze_0_to_1(data_num_0);
-			data_num_short_0=0;
-		}
-		data_num_0=0;
-	} 
-//	else
-//	{
-//		//  ignore all mixed-bit words in terms of transitions, but continue measureing duration 
-//		if(data_num_1) data_num_1++; // count for continuation through hsync
-//		if(data_num_0) data_num_0++; // count for continuation through hsync
-//	}
-}
 
 
 /* called periodically at roughly millisec scale */

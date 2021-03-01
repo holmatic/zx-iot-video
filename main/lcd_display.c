@@ -436,7 +436,7 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
             for(int i=0;i<40;i++) { hash+=attr_mem_fg[aix]-attr_mem_bg[aix]; aix++;  }
             if(hash!=zx_attr_hash[y/8]) {
                 update=true;
-                ESP_LOGI(TAG,"Attr update %x vs %X ",hash,zx_attr_hash[y/8]);
+                //ESP_LOGI(TAG,"Attr update %x vs %X ",hash,zx_attr_hash[y/8]);
                 break;
             }
         }

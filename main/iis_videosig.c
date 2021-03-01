@@ -162,7 +162,7 @@ static void vid_look_for_vsync(){
 	uint32_t num_0_lines=0;
 
 	if(video_synced_cnt<10) video_synced_cnt++;
-	//if(timeout_verbose<100) timeout_verbose++;
+	//if(timeout_verbose<100) timeout_verbose++; // verbose!
 	for(int i=0;i<usec_to_32bit_words(60*64);i++){
 		if(vid_get_next_data()==0){
 			num_0_words++;
@@ -176,7 +176,7 @@ static void vid_look_for_vsync(){
 		}
 	}
 	video_synced_cnt=0;
-	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_look_for_vsync timeout ");timeout_verbose-=20;}
+	if(timeout_verbose>0) {ESP_LOGD(TAG," vid_look_for_vsync timeout ");timeout_verbose-=20;}
 }
 
 
@@ -189,7 +189,11 @@ static void vid_look_for_screen(){
 		} else {
 			num_1_words=0;
 		}
-		if(num_1_words>=usec_to_32bit_words(51)-2) return; // -1 (later-2) was for Zeditor where sync time was prabably nonstandard..
+		if(num_1_words>=usec_to_32bit_words(51)-2){ // -1 (later-2) was for Zeditor where sync time was prabably nonstandard. However also ignore that data..
+			vid_get_next_data();
+			vid_get_next_data();	// avoid timeout in vid_find_hsync Hsync later---
+			return; 
+		}
 	}
 	video_synced_cnt=0;	
 	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_look_for_screen timeout ");timeout_verbose-=20;}
@@ -202,7 +206,7 @@ int __builtin_ctz (unsigned int x); // trailing zeros
 
 static void vid_find_hsync(uint32_t *line_acc_bits, uint32_t* line_bits_result, bool allow_resync ){
 	uint32_t data,lastd=1;
-	for(int i=0;i<usec_to_32bit_words(12);i++){
+	for(int i=0;i<usec_to_32bit_words(12)+0;i++){ 
 		data=vid_get_next_data();
 		if (data==0 ){ /* second condition should prevent from */
 			// we could check for enough length here but that somehow caused artefacts, and also did not help much..  if(*line_acc_bits+20>=*line_bits_result){
@@ -218,10 +222,10 @@ static void vid_find_hsync(uint32_t *line_acc_bits, uint32_t* line_bits_result, 
 		*line_acc_bits+=32;
 		lastd=data;
 	}
-	/* timeout */
+	/* timeout    TODO: Make first line more flexible in regards of this timeout, as different video modes might have different first lines */
 	*line_acc_bits=0;
 	video_synced_cnt=0;	
-	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_find_hsync timeout ");timeout_verbose-=20;}
+	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_find_hsync timeout. ");timeout_verbose-=20;}
 }
 
 

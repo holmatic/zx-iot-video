@@ -410,19 +410,18 @@ static void stzx_task(void*arg)
 				buffered_file_count=0;
 				memset(&zxfile,0,sizeof(zxfile));
 				//zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(400); // break btw files>>> will be done at start
-				ESP_LOGW(TAG, "ENDFILE %d",active_file);
+				ESP_LOGD(TAG, "ENDFILE %d",active_file);
 				active_file=FILE_NOT_ACTIVE;
 				file_busy=1;	// todo only set back after 
 			}
 			if(bytes_to_send){
 				if(num_active_transfers && num_active_transfers>=NUM_PARALLEL_TRANSFERS-1){
 					send_buffer_finish(spi);
-					//ESP_LOGW(TAG, "SEND SPI dwait done");
-					//vTaskDelay(1);
+					ESP_LOGD (TAG, "SEND SPI dwait done");
 					num_active_transfers--;
 				}
 				send_buffer(spi, active_transfer_ix, bytes_to_send*8);
-				ESP_LOGW(TAG, "SEND SPI data %x %d  wv%d f%d",active_transfer_ix, bytes_to_send,zxfile.remaining_wavsamples,buffered_file_count);
+				ESP_LOGD (TAG, "SEND SPI data %x %d  wv%d f%d",active_transfer_ix, bytes_to_send,zxfile.remaining_wavsamples,buffered_file_count);
 				num_active_transfers++;
 				/* use alternating buffers */
 				active_transfer_ix = (active_transfer_ix+1) % NUM_PARALLEL_TRANSFERS;
