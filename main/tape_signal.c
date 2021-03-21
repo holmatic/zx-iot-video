@@ -9,100 +9,30 @@
 #include "driver/i2s.h"	// TODO remove i2s_event_t
 #include "driver/spi_master.h"
 
-#include "zx_server.h"
-#include "signal_to_zx.h"
+//#include "zx_server.h"
 
-#define  NUM_PARALLEL_TRANSFERS  3
-#define  MAX_WRITE_LEN_BYTES  (2048*4) // 6k is Enough for 1K straight w/o oversample
-#define OVERSAMPLE 4
-static const char* TAG = "stzx";
+#include "tape_io.h"
+#include "tape_signal.h"
 
-static spi_device_handle_t spi;
+static const char* TAG = "taps";
 
-static void stzx_task(void*arg);
+static void taps_task(void*arg);
 
-static QueueHandle_t event_queue=NULL;
-static uint8_t* write_buffer[NUM_PARALLEL_TRANSFERS];
-static  QueueHandle_t file_data_queue=NULL;
- 
-#define MILLISEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*ms*125000/1000/8) 
-#define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*125)/1000/8) 
+#define OVERSAMPLE 1
+#define MILLISEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*ms*TAPIO_SAMPLE_SPEED_HZ/1000/8) 
+#define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000/8) 
 
-static void send_buffer(spi_device_handle_t spi, uint8_t parallel_trans_ix, int len_bits)
-{
-    //esp_err_t ret;
-
-    //Transaction descriptors. Declared static so they're not allocated on the stack; we need this memory even when this
-    //function is finished because the SPI driver needs access to it even while we're already calculating the next line.
-    static spi_transaction_t trans[NUM_PARALLEL_TRANSFERS];
-	//memset(&trans, 0, sizeof(spi_transaction_t));
-    //In theory, it's better to initialize trans and data only once and hang on to the initialized
-    //variables. We allocate them on the stack, so we need to re-init them each call.
-    trans[parallel_trans_ix].tx_buffer=write_buffer[parallel_trans_ix];        //finally send the signal data
-    trans[parallel_trans_ix].rx_buffer=NULL; 
-    trans[parallel_trans_ix].length=len_bits;          //Data length, in bits
-    trans[parallel_trans_ix].rxlength=0;  // is overitten on static, so set new 
-    trans[parallel_trans_ix].flags=0; //undo SPI_TRANS_USE_TXDATA flag
-
-    //Queue transaction.
-    ESP_ERROR_CHECK(spi_device_queue_trans(spi, &trans[parallel_trans_ix], portMAX_DELAY));
-
-    //When we are here, the SPI driver is busy (in the background) getting the transactions sent. That happens
-    //mostly using DMA, so the CPU doesn't have much to do here. We're not going to wait for the transaction to
-    //finish because we may as well spend the time calculating the next line. When that is done, we can call
-    //send_line_finish, which will wait for the transfers to be done and check their status.
-}
+#define USEC_TO_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000) 
+#define SAMPLES_to_USEC(samples)   (samples*1000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
-static void send_buffer_finish(spi_device_handle_t spi)
-{
-    spi_transaction_t *rtrans;
-	ESP_ERROR_CHECK(spi_device_get_trans_result(spi, &rtrans, portMAX_DELAY));
-}
-
-/**
- * @brief I2S ADC/DAC mode init.
- */
-void stzx_init()
-{
-   esp_err_t ret;
-
-    spi_bus_config_t buscfg={
-        .miso_io_num=-1,
-        .mosi_io_num=22,
-        .sclk_io_num=-1,
-        .quadwp_io_num=-1,
-        .quadhd_io_num=-1,
-        .max_transfer_sz=MAX_WRITE_LEN_BYTES
-    };
-    spi_device_interface_config_t devcfg={
-        .clock_speed_hz=OVERSAMPLE*125*1000,           //Clock out at 125khz MHz
-        .mode=0,                                //SPI mode 0
-        .spics_io_num=-1,               //CS pin
-        .queue_size=3,                          //We want to be able to queue 7 transactions at a time
-		.cs_ena_posttrans=0,
-		.cs_ena_pretrans=0,
-		.flags=SPI_DEVICE_NO_DUMMY /* write only (maybe also faster?) */
-        //.pre_cb=lcd_spi_pre_transfer_callback,  //Specify pre-transfer callback to handle D/C line
-    };
-    //Initialize the SPI bus
-    ret=spi_bus_initialize(HSPI_HOST, &buscfg, 2); // TODO check DMA channel #
-    ESP_ERROR_CHECK(ret);
-    ret=spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
-    ESP_ERROR_CHECK(ret);
-	ret=spi_device_acquire_bus(spi, portMAX_DELAY);  // ccupy the SPI bus for a device to do continuous transactions. 
-    ESP_ERROR_CHECK(ret);
-
-	for(int i=0;i<NUM_PARALLEL_TRANSFERS;i++){
-	    write_buffer[i]=heap_caps_malloc(MAX_WRITE_LEN_BYTES, MALLOC_CAP_DMA);
-    	if(!write_buffer[i]) printf("calloc of %d failed\n",MAX_WRITE_LEN_BYTES);
-	}
-
-	event_queue=xQueueCreate(8,sizeof(i2s_event_t));
+#define BYTE_SAMPLES_to_USEC(bytes)   (bytes*8000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
-    xTaskCreate(stzx_task, "stzx_task", 1024 * 3, NULL, 9, NULL);
-}
+
+#if 0
+
+
 
 static uint8_t outlevel_inv=0;
 
@@ -188,19 +118,19 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 #endif
 
 	if(file_tag==FILE_NOT_ACTIVE){
-	    while(ix<MAX_WRITE_LEN_BYTES){
+	    while(ix<MAX_TRANSFER_LEN_BYTES){
 			 set_sample(samplebuf,ix++,  IDLE_LEVEL );
 		}
-		if(zxfile.remaining_wavsamples) zxfile.remaining_wavsamples=zxfile.remaining_wavsamples>MAX_WRITE_LEN_BYTES? zxfile.remaining_wavsamples-MAX_WRITE_LEN_BYTES :0;
+		if(zxfile.remaining_wavsamples) zxfile.remaining_wavsamples=zxfile.remaining_wavsamples>MAX_TRANSFER_LEN_BYTES? zxfile.remaining_wavsamples-MAX_TRANSFER_LEN_BYTES :0;
 	}else if(file_tag==FILE_TAG_COMPRESSED){
 		if(zxfile.bitcount==0 && !zxfile.preamble_done){
 			zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(100); // maybe needed to not react too fast on menu
 			zxfile.preamble_done=1;
 		}
-	    while(ix<MAX_WRITE_LEN_BYTES) {
+	    while(ix<MAX_TRANSFER_LEN_BYTES) {
 			if(!zxfile.startbit_done && zxfile.remaining_wavsamples==0){
 					/* good point to possibly exit here as one full byte is done...*/
-					if(ix>MAX_WRITE_LEN_BYTES-50*OVERSAMPLE){
+					if(ix>MAX_TRANSFER_LEN_BYTES-50*OVERSAMPLE){
 						// end of packet will create a 30-60us break at low level, shorter for bigger OVERSAMPLE
 						break;
 					} 
@@ -255,7 +185,7 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 			zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(200); // break btw files)
 			zxfile.preamble_done=1;
 		}
-	    while(ix<MAX_WRITE_LEN_BYTES) {
+	    while(ix<MAX_TRANSFER_LEN_BYTES) {
 			if(zxfile.remaining_wavsamples){
 				set_sample(samplebuf,ix++, zxfile.wavsample ? *zxfile.wavsample++ : IDLE_LEVEL );
 				--zxfile.remaining_wavsamples;
@@ -267,7 +197,7 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 				} else {
 					if(zxfile.bitcount < buffered_filesize*8 ) {
 						/* good point to exit here as one bit is just done...*/
-						if(ix>MAX_WRITE_LEN_BYTES-250){
+						if(ix>MAX_TRANSFER_LEN_BYTES-250){
 #if DEBUG_TRANSFERSWITCH
 							set_sample(samplebuf,ix++,  0xaa ); // mark signals
 							for(int d=0;d<50;d++)
@@ -377,14 +307,29 @@ void stzx_send_cmd(stzx_mode_t cmd, uint8_t data)
 
 }
 
+#endif 
 
-static void stzx_task(void*arg)
+static QueueHandle_t tx_cmd_queue;
+static QueueHandle_t rx_evt_queue;
+
+static void taps_task(void*arg)
 {
-    i2s_event_t evt;
-    size_t buffered_file_count=0;
-	uint8_t num_active_transfers=0;
-	uint8_t active_file=FILE_NOT_ACTIVE;
-	uint8_t active_transfer_ix = 0;
+    //i2s_event_t evt;
+    //size_t buffered_file_count=0;
+    
+	while(true){
+		/* receive only */
+		tapio_clear_transmit_buffers();
+		while( uxQueueMessagesWaiting( tx_cmd_queue )==0  ){
+			tapio_process_next_transfer(0);
+		}
+		/* handle transmit */
+
+
+
+	}
+#if 0
+
     while(1){
 		if(pdTRUE ==  xQueueReceive( event_queue, &evt, 2 ) ) {
 			if(evt.type==(i2s_event_type_t)STZX_FILE_START){
@@ -406,7 +351,7 @@ static void stzx_task(void*arg)
 
 		while ( (buffered_file_count && active_file) || zxfile.remaining_wavsamples){
 			uint32_t bytes_to_send=0;
-			if (fill_buf_from_file(write_buffer[active_transfer_ix],file_data_queue,buffered_file_count,active_file,&bytes_to_send )){
+			if (fill_buf_from_file(tapio_transmit_buffer[active_transfer_ix],file_data_queue,buffered_file_count,active_file,&bytes_to_send )){
 				buffered_file_count=0;
 				memset(&zxfile,0,sizeof(zxfile));
 				//zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(400); // break btw files>>> will be done at start
@@ -416,11 +361,11 @@ static void stzx_task(void*arg)
 			}
 			if(bytes_to_send){
 				if(num_active_transfers && num_active_transfers>=NUM_PARALLEL_TRANSFERS-1){
-					send_buffer_finish(spi);
+					wait_and_finish_transfer(spi);
 					ESP_LOGD (TAG, "SEND SPI dwait done");
 					num_active_transfers--;
 				}
-				send_buffer(spi, active_transfer_ix, bytes_to_send*8);
+				start_transfer(spi, active_transfer_ix, bytes_to_send*8);
 				ESP_LOGD (TAG, "SEND SPI data %x %d  wv%d f%d",active_transfer_ix, bytes_to_send,zxfile.remaining_wavsamples,buffered_file_count);
 				num_active_transfers++;
 				/* use alternating buffers */
@@ -429,5 +374,239 @@ static void stzx_task(void*arg)
 		}
 		if (file_busy==1) file_busy=0;
     }
+	#endif
 }
 
+#if 0
+
+
+static zxserv_evt_type_t phase=ZXSG_INIT;
+
+static const char* phasenames[]={"INIT","SLOW-50Hz","SLOW-60Hz","SAVE","SILENCE","HIGH","NOISE"};
+
+static void set_det_phase(zxserv_evt_type_t newphase)
+{
+	if(newphase!=phase){
+		phase=newphase;
+		zxsrv_send_msg_to_srv( newphase, 0,0);
+		ESP_LOGI(TAG,"Detected %s \n", phasenames[newphase-ZXSG_INIT]  );
+	}
+}
+#endif
+
+typedef enum {
+    TAPRF_INIT     = 0,             /*!< initial status */
+    TAPRF_HDR_STARTED   = 1,        /*!< possibly geceiving header */
+    TAPRF_HDR_RECEIVED   = 2,        /*!< start retriving file */
+    TAPRF_RETRIEVE_DATA   = 3,       /*!< during file transfer, check if ZX loads or ignores */
+} taprfs_state_t;
+
+
+typedef struct tap_rec_status_tag
+{
+    taprfs_state_t state;
+    uint8_t bitcount;
+    uint8_t data;
+    uint16_t pulscount;
+    uint16_t e_line;
+    uint16_t bytecount;
+    uint16_t namelength;
+} tap_rec_status_t;
+
+static tap_rec_status_t recfile;    // some signal statistics
+#if 1
+
+static void recfile_bit(uint8_t bitval)
+{
+    if(bitval) recfile.data |= (0x80>>recfile.bitcount);
+    if(++recfile.bitcount>=8) {
+        // have a byte
+        if(recfile.bytecount%1000<=40) ESP_LOGI(TAG,"recfile byte %d data %02X",recfile.bytecount,recfile.data );
+//        if(recfile.bytecount == recfile.namelength+16404-16393) recfile.e_line=recfile.data;
+ //       if(recfile.bytecount == recfile.namelength+16405-16393) {
+ //           recfile.e_line+=recfile.data<<8;
+  //          ESP_LOGI(TAG,"File E_LINE %d - len %d+%d\n",recfile.e_line,recfile.e_line-16393,recfile.namelength);
+   //     }
+	//	zxsrv_send_msg_to_srv( ZXSG_FILE_DATA, recfile.bytecount, recfile.data);
+
+        recfile.bitcount=0;
+        recfile.bytecount++;
+        // zx memory image is preceided by a name that end with the first inverse char (MSB set)
+     //   if (recfile.namelength==0 && (recfile.data&0x80) ) recfile.namelength=recfile.bytecount;
+        recfile.data=0;
+     //   set_det_phase(ZXSG_SAVE);
+    }
+}
+
+
+static void recfile_finalize()
+{
+	ESP_LOGI(TAG,"recfile finalize  %d bytes, %d bits",recfile.bytecount,recfile.bitcount );
+	recfile.state=TAPRF_INIT;
+
+}
+
+#endif
+
+static void rec_hdr_puls(uint32_t duration){
+	if(recfile.state==TAPRF_INIT){
+		recfile.pulscount=0;
+		recfile.state=TAPRF_HDR_STARTED;
+	} else if(recfile.state==TAPRF_HDR_STARTED || recfile.state==TAPRF_HDR_RECEIVED){
+		recfile.pulscount++;
+		if(recfile.pulscount==256){ /* ace ROM reuires 256 pulses, choose about th same here */
+			ESP_LOGW(TAG,"TAPRF_HDR_RECEIVED\n");
+			recfile.state=TAPRF_HDR_RECEIVED;
+		}
+//	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+//		recfile_bit(1);
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		ESP_LOGW(TAG,"Follow-up Header %d %d ",recfile.bitcount,recfile.bytecount);
+		recfile_finalize();
+		recfile.pulscount=0;
+		recfile.state=TAPRF_HDR_STARTED;
+	} else {
+		ESP_LOGW(TAG,"unknown HDR puls ");
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void rec_0_puls(){
+
+	if(recfile.state==TAPRF_HDR_RECEIVED){
+		ESP_LOGW(TAG,"TAPRF_RETRIEVE_DATA0\n");
+		recfile.state=TAPRF_RETRIEVE_DATA;
+		recfile.bytecount=0;
+		recfile.bitcount=0;
+    	recfile.data=0;
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		recfile_bit(0);
+	} else {
+		ESP_LOGW(TAG,"unknown 0 puls ");
+		recfile.state=TAPRF_INIT;
+	}
+
+}
+
+static void rec_1_puls(uint32_t duration){
+	if(recfile.state==TAPRF_HDR_STARTED || recfile.state==TAPRF_HDR_RECEIVED){
+		ESP_LOGW (TAG, "rec_1_puls during HDR %d us", SAMPLES_to_USEC(duration) );
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		recfile_bit(1);
+	} else {
+		ESP_LOGW(TAG,"unknown 1 puls ");
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void rec_noise_puls(){
+	if(recfile.state!=TAPRF_INIT){
+		ESP_LOGW(TAG,"RESET after noise pulse\n");
+	}
+	recfile.state=TAPRF_INIT;
+}
+
+
+static bool actual_logic_level=0;
+static uint32_t level_cnt=0;
+static uint32_t puls_cnt=0;
+
+
+static void analyze_1_to_0(uint32_t duration){
+	// end of high phase,  245 for 0 , 488 for 1 , or 618us for pilot, 277 for end mark, 1.288 for gap 
+	if (duration<USEC_TO_SAMPLES(150))   rec_noise_puls();
+	else if (duration<=USEC_TO_SAMPLES(350))   rec_0_puls();
+	else if (duration<=USEC_TO_SAMPLES(550))   rec_1_puls(duration);
+	else if (duration<=USEC_TO_SAMPLES(680))   rec_hdr_puls(duration);
+
+
+	if(duration<2 || duration>500 || (puls_cnt&0x1ff)< 5 )	ESP_LOGW (TAG, "High pulse %d smpls, %d us",duration, SAMPLES_to_USEC(duration) );
+	puls_cnt++;
+
+}
+
+static void check_on_const_level(){
+	if(recfile.state!=TAPRF_INIT && level_cnt>USEC_TO_SAMPLES(3000)){
+		if (recfile.state==TAPRF_RETRIEVE_DATA)
+			recfile_finalize();
+		else{
+			ESP_LOGW(TAG,"RESET after silence\n");
+		}
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void analyze_0_to_1(uint32_t duration){
+	if(duration>1000)	ESP_LOGW (TAG, "High after long low - %d smpls, %d us",duration, SAMPLES_to_USEC(duration));
+}
+
+int __builtin_clz (unsigned int x);
+int __builtin_ctz (unsigned int x); // trailing zeros
+
+/* every incoming 8-bit sample MSB first */
+void IRAM_ATTR rx_checksample(uint8_t data)
+{
+	if (data==0) {
+		if(actual_logic_level){
+			analyze_1_to_0(level_cnt);
+			actual_logic_level=false;
+			level_cnt=8;
+		} else {
+			level_cnt+=8;
+		}
+	} else if (data==0xff){
+		if(!actual_logic_level){
+			analyze_0_to_1(level_cnt);
+			actual_logic_level=true;
+			level_cnt=8;
+		} else {
+			level_cnt+=8;
+		}
+	} else {
+		// level change within byte, assume just one transition
+		int cnt_newlvl = __builtin_ctz( data^(actual_logic_level?0:0xff)  );
+		level_cnt+=8-cnt_newlvl;
+		if(actual_logic_level)
+			analyze_1_to_0(level_cnt);
+		else
+			analyze_0_to_1(level_cnt);
+		actual_logic_level=!actual_logic_level;
+		level_cnt=cnt_newlvl;
+	} 
+}
+
+
+static void on_rx_data(uint8_t* data, int size_bits){
+	static uint32_t acc_kbytes=0;
+	ESP_LOGD (TAG, "on_rx_data %d bits",size_bits);
+	acc_kbytes+=size_bits/8192;
+	if ((acc_kbytes&0xff)==0) ESP_LOGW (TAG, "on_rx_data acc %d Mbytes %x, plscnt=%d ",acc_kbytes/1024,data[0],puls_cnt);
+	// todo we could quick-check for all-0 here as this is the usual case
+	if( level_cnt>USEC_TO_SAMPLES(2500) && !actual_logic_level){
+		for(int i=0;i<size_bits/8;i++){
+			if(data[i]) goto not_just_all_0;
+		}
+		// simply have all-0
+		level_cnt+=size_bits;
+		check_on_const_level();
+	} else {
+
+not_just_all_0:
+
+		for(int i=0;i<size_bits/8;i++){
+			rx_checksample(data[i]);
+		}
+	}
+}
+
+void taps_rx_set_queue_to_use(QueueHandle_t rx_evt_q){
+	rx_evt_queue=rx_evt_q;
+}
+
+// call once at startup
+void taps_init()
+{
+	tx_cmd_queue=xQueueCreate(5, sizeof( taps_tx_packet_t ) );
+	tapio_init(on_rx_data);
+	xTaskCreate(taps_task, "taps_task", 1024 * 3, NULL, 9, NULL);
+}

@@ -40,7 +40,7 @@ static const char* TAG = "i2svid";
 
 
 
-#define VID_PWMO_PIN	           (25) // 12 make this 25?
+#define VID_PWMO_PIN	           (25-5) // 12 make this 25?
 #define VID_PWMLEVEL_PIN           (33) // 13 make this 33 as input
 #define VID_SIGNALIN_PIN           (32) // 14 make this 32 as input ?
 

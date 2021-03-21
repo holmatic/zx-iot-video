@@ -23,7 +23,6 @@ Works asynchroously, thus communication is done via queues
 #include "zx_serv_dialog.h"
 #include "zx_server.h"
 #include "zx_file_img.h"
-#include "signal_to_zx.h"
 
 static const char *TAG = "zx_server";
 
