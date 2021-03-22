@@ -1,14 +1,5 @@
-; SYSINFO81 
-; 	GPL
-; 	Oliver Lange
-; 	Version 1.0.1
 
-; Compile with "tasm -80 -b sysinfo.asm sysinfo.p" 
-
-
-
-; 2010/2011: Modifiziert f�r Spar-Interface mit TTLs - Siehe Forum
-; 			 256 Bytes RAM an 3E00h nicht mehr n�tig
+; Compile with  'C:\Program Files (x86)\Tasm32\TASM.EXE' -80 -b .\menu1k.asm .\menu1k.p .\menu1k.lst
 
 
 
@@ -186,30 +177,29 @@ W2:
     call $031F  ; SAVE byte in E
     LD E, 0    ; send dummy as end
     call $031F ;
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr
-    ;POP HL ; remove ret addr ??
-   ; 7 times pop needed, 8 times is too much   POP HL or just reset
     ; /* reset stack pointer */
 	LD HL,(16386) ; ERR_SP
 	LD SP,HL
     LD HL, $0676    ; return address in NEXT-LINE like when LOADING
 	EX (SP),HL
 #if 1
-    ; run from calculator area
+    ; run loader from stack area
+    ; max used size for 1k programs is at $4009 + 949/952 bytes
+    ; the 32 byte loader fits at RAMTOP-60 givig stack just enough space
+    LD BC,-60
+	LD HL,(16388) ; RAMTOP
+    
+    ADD HL,BC
+    PUSH HL     ; address of quick loader on stack, can use RET later to go there
+    EX DE,HL
     LD HL,PLOADER
-    LD DE,32708
     LD BC,32
     LDIR
-
+    ; LD DE,32708 hardcoded position, would not work with moved RAMTOP
 	LD HL,ELINEHI
 	INC (HL) ; make sure no match during load
 	LD HL,4009h	; start of BASIC area to load
-    jp 32708
+    RET      ; go to calculated address below RAMTOP  jp 32708
 #else
 	LD HL,ELINEHI
 	INC (HL) ; make sure no match during load
