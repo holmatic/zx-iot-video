@@ -83,7 +83,9 @@ void zx_string_to_ascii(const uint8_t* zxstr, size_t len,  char* buf_for_ascii)
     for(i=0;i<len;i++) {
         c='?';
         z=zxstr[i] & 0x7f; // ignore invert
-        if(z>=8 && z<64) c=CODETABLE[z-8];
+		if(z==0)
+			c=' ';
+        else if(z>=8 && z<64) c=CODETABLE[z-8];
 		if(c>='A' && c<='Z' && (zxstr[i] & 0x80)  ) c= (char) tolower( (int) c); // inverted -> lower case
         *buf_for_ascii++=c;
     }
