@@ -189,7 +189,12 @@ static void vid_look_for_screen(){
 		} else {
 			num_1_words=0;
 		}
-		if(num_1_words>=usec_to_32bit_words(51)-2) return; // -1 (later-2) was for Zeditor where sync time was prabably nonstandard..
+		if(num_1_words>=usec_to_32bit_words(51)-2){ // -1 (later-2) was for Zeditor where sync time was prabably nonstandard. However also ignore that data..
+			// dummy read to avoid timeout in first vid_find_hsync Hsync later --- critical for early ULA timing without back porch
+			vid_get_next_data();
+			vid_get_next_data();	
+			return; 
+		}
 	}
 	video_synced_cnt=0;	
 	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_look_for_screen timeout ");timeout_verbose-=20;}
