@@ -526,9 +526,9 @@ static void vid_in_task(void*arg)
 				}
 			}
 
-			if(frame_count%10000==100){
+			if(frame_count%50000==100){
 				if((line==10||line==200)){
-					ESP_LOGI(TAG," Frames: %d, line: %d, linlength: %d, inc %X ", frame_count,line,line_bits_result, line_bits_inc);
+					ESP_LOGI(TAG,"Note: Frames: %d, line: %d, linlength: %d, inc %X ", frame_count,line,line_bits_result, line_bits_inc);
 					if(frame_count<1500 && line==200){
 						char *buffer=malloc(2048);
 						vTaskGetRunTimeStats( buffer);

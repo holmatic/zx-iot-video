@@ -60,6 +60,8 @@ longer cables. In this case, R1 should be a 75 Ohms resistor to act as standard 
 
 ## Version Info
 
+0.6.3 Improvements for older ULA (2C184E) video signal
+
 0.6.0 VGA output support added
 
 0.5.0 Initial pre-release (derived from zx-iot-mi)

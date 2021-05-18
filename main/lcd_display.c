@@ -271,31 +271,31 @@ void lcd_init(spi_device_handle_t spi)
     int lcd_detected_type = 0;
     int lcd_type;
 
-    printf("LCD ID: %08X\n", lcd_id);
+    ESP_LOGD(TAG,"LCD ID: %08X\n", lcd_id);
     if ( lcd_id == 0 ) {
         //zero, ili
         lcd_detected_type = LCD_TYPE_ILI;
-        printf("ILI9341 detected.\n");
+        ESP_LOGD(TAG,"ILI9341 detected.\n");
     } else {
         // none-zero, ST
         lcd_detected_type = LCD_TYPE_ST;
-        printf("ST7789V detected.\n");
+        ESP_LOGD(TAG,"ST7789V detected.\n");
     }
 
 #ifdef CONFIG_LCD_TYPE_AUTO
     lcd_type = lcd_detected_type;
 #elif defined( CONFIG_LCD_TYPE_ST7789V )
-    printf("kconfig: force CONFIG_LCD_TYPE_ST7789V.\n");
+    ESP_LOGD(TAG,"kconfig: force CONFIG_LCD_TYPE_ST7789V.\n");
     lcd_type = LCD_TYPE_ST;
 #elif defined( CONFIG_LCD_TYPE_ILI9341 )
-    printf("kconfig: force CONFIG_LCD_TYPE_ILI9341.\n");
+    ESP_LOGD(TAG,"kconfig: force CONFIG_LCD_TYPE_ILI9341.\n");
     lcd_type = LCD_TYPE_ILI;
 #endif
     if ( lcd_type == LCD_TYPE_ST ) {
-        printf("LCD ST7789V initialization.\n");
+        ESP_LOGD(TAG,"LCD ST7789V initialization.\n");
         lcd_init_cmds = st_init_cmds;
     } else {
-        printf("LCD ILI9341 initialization.\n");
+        ESP_LOGD(TAG,"LCD ILI9341 initialization.\n");
         lcd_init_cmds = ili_init_cmds;
     }
 
@@ -436,7 +436,7 @@ static bool zx_calc_lines(uint16_t *dest, int line, int frame, int linect)
             for(int i=0;i<40;i++) { hash+=attr_mem_fg[aix]-attr_mem_bg[aix]; aix++;  }
             if(hash!=zx_attr_hash[y/8]) {
                 update=true;
-                ESP_LOGI(TAG,"Attr update %x vs %X ",hash,zx_attr_hash[y/8]);
+                ESP_LOGD(TAG,"Attr update %x vs %X ",hash,zx_attr_hash[y/8]);
                 break;
             }
         }
