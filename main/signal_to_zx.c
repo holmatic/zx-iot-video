@@ -422,7 +422,7 @@ static void stzx_task(void*arg)
 					num_active_transfers--;
 				}
 				send_buffer(spi, active_transfer_ix, bytes_to_send*8);
-				ESP_LOGW(TAG, "SEND SPI data %x %d  wv%d f%d",active_transfer_ix, bytes_to_send,zxfile.remaining_wavsamples,buffered_file_count);
+				ESP_LOGD(TAG, "SEND SPI data %x %d  wv%d f%d",active_transfer_ix, bytes_to_send,zxfile.remaining_wavsamples,buffered_file_count);
 				num_active_transfers++;
 				/* use alternating buffers */
 				active_transfer_ix = (active_transfer_ix+1) % NUM_PARALLEL_TRANSFERS;

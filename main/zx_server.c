@@ -202,7 +202,7 @@ static void zxsrv_task(void *arg)
                 }
 			} else if (evt.evt_type==ZXSG_SLOWM_50HZ || evt.evt_type==ZXSG_SLOWM_60HZ) {
                 if(watchdog_cnt>=2){
-                    ESP_LOGW(TAG,"Slow mode after initial LOAD, success after %d cnts.",watchdog_cnt);
+                    ESP_LOGW(TAG,"Slow mode after initial LOAD, success after %d WD cnts.",watchdog_cnt);
                     watchdog_cnt=0; /* deactivate watchdog after succesfully loaded */
                 }
             } else {
@@ -212,7 +212,7 @@ static void zxsrv_task(void *arg)
             /* no new event, check if we have a failure in compressed loading */
             if(watchdog_cnt>=2){
                 if(++watchdog_cnt > COMPRLOAD_TIMEOUT_MS/EVT_TIMEOUT_MS  ){
-                    ESP_LOGW(TAG,"Compressed load watchdog - maybe wrong level!");
+                    ESP_LOGW(TAG,"Compressed load watchdog - maybe wrong level (%c)!",(get_zx_outlevel_inverted() ? 'i':'n' ) );
                     set_zx_outlevel_inverted( ! get_zx_outlevel_inverted() );
                     stzx_set_out_inv_level( get_zx_outlevel_inverted()  );
                     watchdog_cnt=0;
