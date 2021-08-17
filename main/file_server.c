@@ -25,7 +25,6 @@
 #include "esp_spiffs.h"
 #include "esp_http_server.h"
 
-#include "signal_to_zx.h"
 
 /* Max length a file path can have on storage */
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
