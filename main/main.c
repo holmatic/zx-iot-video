@@ -209,25 +209,25 @@ void app_main()
 
     nvs_sys_init();
     bled_init();
- //   zxsrv_init();
-   // taps_init();
-  //  sfzx_init();
-  //  user_knob_init();
-  //  vid_init();
-  //  lcd_disp_init();
+    zxsrv_init();
+    taps_init();
+    sfzx_init();
+    user_knob_init();
+    vid_init();
+    lcd_disp_init();
 
     if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
-    taps_init();
-  //  video_attr_init();
-  //  if(1) vga_disp_init();
+    //taps_init();
+    video_attr_init();
+    if(1) vga_disp_init();
 
-//	wifi_sta_init(); /* needs nvs_sys_init */
+	wifi_sta_init(); /* needs nvs_sys_init */
 
     /* Initialize file storage */
- //   ESP_ERROR_CHECK(init_spiffs());
+    ESP_ERROR_CHECK(init_spiffs());
 
     /* Start the file server */
-//    ESP_ERROR_CHECK(start_file_server("/spiffs"));
+    ESP_ERROR_CHECK(start_file_server("/spiffs"));
 
     bled_ini_done();
 

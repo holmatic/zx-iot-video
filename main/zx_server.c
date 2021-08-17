@@ -138,14 +138,14 @@ static void zxsrv_task(void *arg)
 			//ESP_LOGI(TAG,"Retrieved evt %d",evt.evt_type);
             if(evt.evt_type==ZXSG_HIGH){
                 // Load
-                if(!stzx_is_transfer_active()){
+                //if(!stzx_is_transfer_active()){
                     send_zxf_loader_uncompressed();
                     if (watchdog_cnt==0) watchdog_cnt=1;
                     // next - main menu
                     zxdlg_reset();
-                } else {
-                    ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
-                }
+                //} else {
+                //    ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
+                //}
             }else if(evt.evt_type==ZXSG_FILE_DATA){
                 if(evt.addr<FILFB_SIZE){
                     file_first_bytes[evt.addr]=(uint8_t) evt.data;

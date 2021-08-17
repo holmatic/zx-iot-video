@@ -22,6 +22,8 @@ extern "C" {
 
 typedef enum {
     TTX_DATA_ACE_STDSPEED,    /*!< transmit given at standard-speed */
+    TTX_DATA_ZX81_STDSPEED,   /*!< transmit given at standard-speed */
+    TTX_DATA_ZX81_QLOAD,      /*!< transmit given at high speed */
 	TTX_SW_RX_SPEED_STD,	  /*!< switch receiver to standard-speed */
 	TTX_NUM_TYPES  		 	  /*!<  */
 } taps_txdata_id_t;
@@ -33,8 +35,10 @@ typedef struct taps_tx_packet_tag{
 	uint32_t para;			/*!<  generic parameter, usage depends on packet_type_id  */
 }taps_tx_packet_t ;
 
+
 void taps_tx_enqueue(taps_tx_packet_t* tx_packet, bool wait_done);
 
+void taps_tx_wait_all_done();
 
 /*
 taps_tx_enqueue: if (num_active_tx==0 take(); num_active_tx++) num_active_tx is counting semaphore
