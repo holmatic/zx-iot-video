@@ -14,6 +14,7 @@
 #include "driver/ledc.h"
 #include "esp_adc_cal.h"
 #include "zx_server.h"
+#include "user_knob.h"
 #include "signal_from_zx.h"
 
 
@@ -39,10 +40,9 @@ static const char* TAG = "i2svid";
 
 
 
-#define VID_PWMO_PIN	           (25) // 12 make this 25?
+#define VID_PWMO_PIN	           (25-5) // 12 make this 25?
 #define VID_PWMLEVEL_PIN           (33) // 13 make this 33 as input
 #define VID_SIGNALIN_PIN           (32) // 14 make this 32 as input ?
-
 
 
 #define STD_NUM_HDR_LINES 24   // upper header - 240 = 24+192+24
@@ -162,7 +162,7 @@ static void vid_look_for_vsync(){
 	uint32_t num_0_lines=0;
 
 	if(video_synced_cnt<10) video_synced_cnt++;
-	//if(timeout_verbose<100) timeout_verbose++;
+	//if(timeout_verbose<100) timeout_verbose++; // verbose!
 	for(int i=0;i<usec_to_32bit_words(60*64);i++){
 		if(vid_get_next_data()==0){
 			num_0_words++;
@@ -176,7 +176,7 @@ static void vid_look_for_vsync(){
 		}
 	}
 	video_synced_cnt=0;
-	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_look_for_vsync timeout ");timeout_verbose-=20;}
+	if(timeout_verbose>0) {ESP_LOGD(TAG," vid_look_for_vsync timeout ");timeout_verbose-=20;}
 }
 
 
@@ -207,7 +207,7 @@ int __builtin_ctz (unsigned int x); // trailing zeros
 
 static void vid_find_hsync(uint32_t *line_acc_bits, uint32_t* line_bits_result, bool allow_resync ){
 	uint32_t data,lastd=1;
-	for(int i=0;i<usec_to_32bit_words(12);i++){
+	for(int i=0;i<usec_to_32bit_words(12)+0;i++){ 
 		data=vid_get_next_data();
 		if (data==0 ){ /* second condition should prevent from */
 			// we could check for enough length here but that somehow caused artefacts, and also did not help much..  if(*line_acc_bits+20>=*line_bits_result){
@@ -223,10 +223,10 @@ static void vid_find_hsync(uint32_t *line_acc_bits, uint32_t* line_bits_result, 
 		*line_acc_bits+=32;
 		lastd=data;
 	}
-	/* timeout */
+	/* timeout    TODO: Make first line more flexible in regards of this timeout, as different video modes might have different first lines */
 	*line_acc_bits=0;
 	video_synced_cnt=0;	
-	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_find_hsync timeout ");timeout_verbose-=20;}
+	if(timeout_verbose>0) {ESP_LOGI(TAG," vid_find_hsync timeout. ");timeout_verbose-=20;}
 }
 
 
@@ -275,6 +275,35 @@ static uint32_t get_vert_line_adjust_nv()
 }
 
 
+
+static uint32_t get_clocks_per_line_nv()
+{
+    esp_err_t err;
+    uint32_t val=414;  /* default goes here, 414 for ZX, 416 for ACE */
+    nvs_handle my_handle;
+    ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+    // Read
+    err = nvs_get_u32(my_handle, "VID_CLK_P_LIN", &val);
+    if (err!=ESP_OK && err!=ESP_ERR_NVS_NOT_FOUND){
+        ESP_ERROR_CHECK( err );
+    }
+    nvs_close(my_handle);
+    return val;
+}
+
+
+static void set_clocks_per_line_nv(uint32_t newval)
+{
+    nvs_handle my_handle;
+    if(get_clocks_per_line_nv() != newval) {
+        ESP_ERROR_CHECK( nvs_open("zxstorage", NVS_READWRITE, &my_handle) );
+        ESP_ERROR_CHECK( nvs_set_u32(my_handle, "VID_CLK_P_LIN", newval ) );
+        ESP_ERROR_CHECK( nvs_commit(my_handle) ); 
+        nvs_close(my_handle);
+    }
+}
+
+
 static void set_pixel_adjust_nv(uint32_t newval)
 {
     nvs_handle my_handle;
@@ -303,6 +332,11 @@ static uint32_t pixel_calibration_active=0;
 static uint8_t pixel_calibration_frames=0;
 static uint32_t pixel_adjust=12; // will be set from nv-mem anyway		
 static uint32_t vline_adjust=32; // will be set from nv-mem anyway
+
+static uint32_t pixels_per_vline=414; // is 414 for ZX, 416 for Jupiter
+
+
+
 static uint32_t cal_pix_adj=0;		
 static bool cal_vert_adj_pending=false;		
 
@@ -329,6 +363,7 @@ void vid_cal_pixel_start(){
 	cal_pix_adj=0;
 	pixel_calibration_active=200;
 	pixel_calibration_frames=10;
+	pixels_per_vline=414; 	/* this procedure is currently only started fro ZX, not ACE, so fall back */
 	cal_pix_adj=pixel_calibration_active;
 	cal_pix_bestadj_val=0;
 	for(int i=0;i<2*CAL_FILT_HSIZ+1;i++) cal_pix_filter[i]=0;
@@ -403,6 +438,7 @@ static void calpixel_framecheck(){
 			pixel_calibration_active=0;
 			ESP_LOGI(TAG," Done: Optimum is at %d.", cal_pix_bestadj_pos);	
 			set_pixel_adjust_nv(cal_pix_bestadj_pos);		
+			set_clocks_per_line_nv(pixels_per_vline);
 			pixel_adjust=cal_pix_bestadj_pos;
 		}
 	}
@@ -489,7 +525,7 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 	*/
 }
 
-
+static uint8_t pending_user_adj=0;
 
 static void vid_in_task(void*arg)
 {
@@ -498,6 +534,7 @@ static void vid_in_task(void*arg)
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
 	pixel_adjust=get_pixel_adjust_nv();
 	vline_adjust=get_vert_line_adjust_nv();
+	pixels_per_vline=get_clocks_per_line_nv();
     ESP_LOGI(TAG,"vid_in_task START  (pixadj %d, vlineadj %d)",pixel_adjust,vline_adjust);
     while(true){
 		uint32_t line_acc_bits=0;
@@ -521,7 +558,7 @@ static void vid_in_task(void*arg)
 				line_bits_acc+=line_bits_result;
 				lbcount++;
 				if(lbcount==20){
-					line_bits_inc = (line_bits_acc<<16)/(20*414);	/* one zxline is 207 cpu cycles=414 pixel, 10 times avg */
+					line_bits_inc = (line_bits_acc<<16)/(20*pixels_per_vline);	/* one zxline is 207 cpu cycles=414 pixel, 10 times avg */
 					calc_startpos_for_frame(line_bits_inc); 
 				}
 			}
@@ -546,13 +583,35 @@ static void vid_in_task(void*arg)
 			timeout_verbose=60;
 		}
 		frame_count++;
-		if(video_synced_state)
+		if(video_synced_state){
 			last_sync_timer=500;
+		}
 		else if(last_sync_timer) last_sync_timer--;
+		user_knob_periodic_check();
+		if(pending_user_adj){
+			if(pending_user_adj-- ==1){
+				// store current settings
+				set_pixel_adjust_nv(cal_pix_bestadj_pos);		
+				set_clocks_per_line_nv(pixels_per_vline);
+			}
+		}
 	}
-
 }
 
+
+void vid_user_scr_adj_event()
+{
+	if(pending_user_adj==0){
+		pixels_per_vline=416;	/* manual alignment nomally not one for ZX, so switch to Jupiter ACE */
+		pixel_adjust+=14; 		/* Heinz reported that he needed 3 manual steps of 7 for his ACE, so +14 here to make is roughly be the first step */
+	}
+	pixel_adjust+=7;
+	if(pixel_adjust > 220){
+		pixel_adjust-= 141; // cycle through adjust range 
+		pixels_per_vline = pixels_per_vline==416 ? 414:416;	// toggle zx/ace for every second loop
+	}
+	pending_user_adj=500; /* after adjustment plus 10 sec inactivity, write results to nv */
+}
 
 
 /**
@@ -625,5 +684,7 @@ void vid_init()
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
     gpio_config(&io_conf);
+
+
 
 }

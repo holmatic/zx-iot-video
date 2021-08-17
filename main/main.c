@@ -24,13 +24,14 @@
 
 #include "zx_server.h"
 #include "signal_from_zx.h"
-#include "signal_to_zx.h"
 #include "wifi_sta.h"
 #include "iis_videosig.h"
 #include "video_attr.h"
+#include "user_knob.h"
 #include "led_matrix.h"
 #include "lcd_display.h"
 #include "vga_display.h"
+#include "tape_signal.h"
 
 /* This example demonstrates how to create file server
  * using esp_http_server. This file has only startup code.
@@ -146,9 +147,10 @@ static void bled_init()
 
 static void bled_timer_event( TimerHandle_t pxTimer )
 {
-    bool slowmode_detected=(zxsrv_get_zx_status()==ZXSG_SLOWM_50HZ ||  zxsrv_get_zx_status()==ZXSG_SLOWM_60HZ  ); 
-    bool led_on=false;
     static uint16_t count=0; /* cycle count */
+    bool led_on=false;
+    /*
+    bool slowmode_detected=(zxsrv_get_zx_status()==ZXSG_SLOWM_50HZ ||  zxsrv_get_zx_status()==ZXSG_SLOWM_60HZ  ); 
     ++count;
     if (stzx_is_transfer_active()){
         led_on = ((count&3)==1);
@@ -160,7 +162,10 @@ static void bled_timer_event( TimerHandle_t pxTimer )
         if (count==10) led_on = wifi_sta_is_connected(); 
         if (count>2500/BLED_CYCLE_MS && slowmode_detected) count=0; 
         if (count>5000/BLED_CYCLE_MS) count=0; 
-    }
+    }*/
+    if (count==1) led_on = true; 
+    if (count>5000/BLED_CYCLE_MS) count=0; 
+
 	if(PIN_NUM_BLINK_LED<GPIO_NUM_MAX)      gpio_set_level(PIN_NUM_BLINK_LED,     led_on ? BLINK_LED_ON : BLINK_LED_OFF);
 	if(PIN_NUM_2ND_BLINK_LED<GPIO_NUM_MAX)  gpio_set_level(PIN_NUM_2ND_BLINK_LED, led_on ? BLINK_LED_ON : BLINK_LED_OFF);
  }
@@ -204,24 +209,25 @@ void app_main()
 
     nvs_sys_init();
     bled_init();
-    zxsrv_init();
-    stzx_init();
-    sfzx_init();
-    vid_init();
-    lcd_disp_init();
+ //   zxsrv_init();
+   // taps_init();
+  //  sfzx_init();
+  //  user_knob_init();
+  //  vid_init();
+  //  lcd_disp_init();
 
     if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
-    
-    video_attr_init();
-    if(1) vga_disp_init();
+    taps_init();
+  //  video_attr_init();
+  //  if(1) vga_disp_init();
 
-	wifi_sta_init(); /* needs nvs_sys_init */
+//	wifi_sta_init(); /* needs nvs_sys_init */
 
     /* Initialize file storage */
-    ESP_ERROR_CHECK(init_spiffs());
+ //   ESP_ERROR_CHECK(init_spiffs());
 
     /* Start the file server */
-    ESP_ERROR_CHECK(start_file_server("/spiffs"));
+//    ESP_ERROR_CHECK(start_file_server("/spiffs"));
 
     bled_ini_done();
 
