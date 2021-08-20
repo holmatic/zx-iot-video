@@ -1,4 +1,16 @@
-// holmatic
+/* ZX Server
+
+Controls communication to the ZX computer by listening to signal_from and 
+sending data via signal_to modules.
+
+Works asynchronously, thus communication is done via queues
+
+There is a shared incoming queue for events like silence/fileheader/etc that contains a small data buffer for 16byte messages (recognized names etc)
+
+Some data then comes via a data queue like files stored
+
+
+*/
 
 
 #ifndef _ZX_SERVER_H_
@@ -24,6 +36,9 @@ typedef enum {
 	ZXSG_SILENCE,
 	ZXSG_HIGH ,
 	ZXSG_NOISE,
+
+	ZXSG_OCR_NAME,
+	ZXSG_OCR_DATA,
 
     ZXSG_FILE_DATA = 400,
 

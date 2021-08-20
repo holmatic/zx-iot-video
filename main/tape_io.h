@@ -31,7 +31,7 @@ void tapio_init(tapio_receive_callback_t on_incomming_data);
 // wait until a tranfer ends if transfers still pending, callback may be triggered, return number of remaing active transfers
 int tapio_wait_and_finish_transfer();
 
-// if needed then wait until a tranfer ends (callback may be triggered) , start new tranfer
+// if needed then wait until a transfer ends (callback may be triggered) , start new tranfer
 // transmit_len_bits must be <= TAPIO_MAX_TRANSFER_LEN_BYTES*8; if transmit_len_bits=0, then it is set to the maximum automatically
 void tapio_process_next_transfer(int transmit_len_bits);
 

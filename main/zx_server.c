@@ -3,7 +3,7 @@
 Controls communication to the ZX computer by listening to signal_from and 
 sending data via signal_to modules.
 
-Works asynchroously, thus communication is done via queues
+Works asynchronously, thus communication is done via queues
 
 */
 

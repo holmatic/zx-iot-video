@@ -16,11 +16,6 @@ void sfzx_report_video_signal_status(bool vid_is_active); /* report if we have a
 void sfzx_checksample(uint32_t data);   /* every incoming 32-bit sample as long as vid_is_active=false */
 void sfzx_periodic_check();             /* called periodically at roughly millisec scale */
 
-/* outgoing events */
-typedef struct {
-    uint8_t  etype;   /*!< sfzx_evt_type_t */
-    uint8_t  data;    /*!< for SFZX_EVTTYPE_FILE_DATA */
-} sfzx_event_t;
 
 
 

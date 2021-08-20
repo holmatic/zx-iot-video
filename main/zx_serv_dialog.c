@@ -1,9 +1,7 @@
-/* ZX Server
+/* ZX Serv Dialog
 
-Controls communication to the ZX computer by listening to signal_from and 
-sending data via signal_to modules.
-
-Works asynchroously, thus communication is done via queues
+Controls creation and response from tiny ZX programs/screens with interactive content
+to build a multi-stage menu system
 
 */
 

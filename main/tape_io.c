@@ -17,7 +17,7 @@
 #define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*BASE_SPEED_HZ/1000)/1000/8) 
 
 static const char* TAG = "tapio";
-static spi_device_handle_t tapio_spi;	// SPI used for tapi in and out sampling. a I2S would fit better but this is not available when 2x I2S used for video conversion
+static spi_device_handle_t tapio_spi;	// SPI used for tape in and out sampling. a I2S would fit better but this is not available when 2x I2S used for video conversion
 static uint8_t* tapio_transmit_buffer[NUM_PARALLEL_TRANSFERS];
 static uint8_t* tapio_receive_buffer[NUM_PARALLEL_TRANSFERS];
  
@@ -58,7 +58,7 @@ void tapio_process_next_transfer(int transmit_len_bits){
 	//memset(&trans, 0, sizeof(spi_transaction_t));
     //In theory, it's better to initialize trans and data only once and hang on to the initialized variables.
     trans[tapio_next_active_transfer_ix].tx_buffer=tapio_transmit_buffer[tapio_next_active_transfer_ix];        //finally send the signal data
-    trans[tapio_next_active_transfer_ix].rx_buffer=tapio_receive_buffer[tapio_next_active_transfer_ix]  ; 
+    trans[tapio_next_active_transfer_ix].rx_buffer= tapio_receive_callback ? tapio_receive_buffer[tapio_next_active_transfer_ix] : NULL; 
     trans[tapio_next_active_transfer_ix].length=transmit_len_bits;         //Data length, in bits
     trans[tapio_next_active_transfer_ix].rxlength=0;  // is in lib function static, so set new. (0 defaults this to the value of length). 
     trans[tapio_next_active_transfer_ix].flags=0;     //reset  SPI_TRANS_USE_TXDATA and SPI_TRANS_USE_RXDATA  flag

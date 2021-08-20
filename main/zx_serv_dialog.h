@@ -1,4 +1,10 @@
 // holmatic
+/* ZX Serv Dialog
+
+Controls creation and response from tiny ZX programs/screens with interactive content
+to build a multi-stage menu system
+
+*/
 
 
 #ifndef _ZX_SERV_DIALOG_H_

@@ -324,21 +324,9 @@ static void taps_task(void*arg)
 			tapio_process_next_transfer(0);
 		}
 		/* handle transmit */
-		taps_tx_packet_t file;
-		uint8_t *buf;
-		uint32_t siz;
-		bool end_of_file=false;
-		if(xQueueReceive(tx_cmd_queue, &file,1 )){
-			stzx_setup_new_file(file);
-			do{
-				buf = tapio_get_next_transmit_buffer();			
-				end_of_file = tzx_fill_buf_from_file( buf, TAPIO_MAX_TRANSFER_LEN_BYTES, &siz) ;
-				tapio_process_next_transfer(siz*8);
-			} while(!end_of_file);
-			while ( tapio_wait_and_finish_transfer() ){
-				/* just wait till all done so we can clear the buffers */
-			}
-		}
+
+
+
 	}
 #if 0
 
@@ -389,6 +377,227 @@ static void taps_task(void*arg)
 	#endif
 }
 
+#if 0
+
+
+static zxserv_evt_type_t phase=ZXSG_INIT;
+
+static const char* phasenames[]={"INIT","SLOW-50Hz","SLOW-60Hz","SAVE","SILENCE","HIGH","NOISE"};
+
+static void set_det_phase(zxserv_evt_type_t newphase)
+{
+	if(newphase!=phase){
+		phase=newphase;
+		zxsrv_send_msg_to_srv( newphase, 0,0);
+		ESP_LOGI(TAG,"Detected %s \n", phasenames[newphase-ZXSG_INIT]  );
+	}
+}
+#endif
+
+typedef enum {
+    TAPRF_INIT     = 0,             /*!< initial status */
+    TAPRF_HDR_STARTED   = 1,        /*!< possibly geceiving header */
+    TAPRF_HDR_RECEIVED   = 2,        /*!< start retriving file */
+    TAPRF_RETRIEVE_DATA   = 3,       /*!< during file transfer, check if ZX loads or ignores */
+} taprfs_state_t;
+
+
+typedef struct tap_rec_status_tag
+{
+    taprfs_state_t state;
+    uint8_t bitcount;
+    uint8_t data;
+    uint16_t pulscount;
+    uint16_t e_line;
+    uint16_t bytecount;
+    uint16_t namelength;
+} tap_rec_status_t;
+
+static tap_rec_status_t recfile;    // some signal statistics
+#if 1
+
+static void recfile_bit(uint8_t bitval)
+{
+    if(bitval) recfile.data |= (0x80>>recfile.bitcount);
+    if(++recfile.bitcount>=8) {
+        // have a byte
+        if(recfile.bytecount%1000<=40) ESP_LOGI(TAG,"recfile byte %d data %02X",recfile.bytecount,recfile.data );
+//        if(recfile.bytecount == recfile.namelength+16404-16393) recfile.e_line=recfile.data;
+ //       if(recfile.bytecount == recfile.namelength+16405-16393) {
+ //           recfile.e_line+=recfile.data<<8;
+  //          ESP_LOGI(TAG,"File E_LINE %d - len %d+%d\n",recfile.e_line,recfile.e_line-16393,recfile.namelength);
+   //     }
+	//	zxsrv_send_msg_to_srv( ZXSG_FILE_DATA, recfile.bytecount, recfile.data);
+
+        recfile.bitcount=0;
+        recfile.bytecount++;
+        // zx memory image is preceided by a name that end with the first inverse char (MSB set)
+     //   if (recfile.namelength==0 && (recfile.data&0x80) ) recfile.namelength=recfile.bytecount;
+        recfile.data=0;
+     //   set_det_phase(ZXSG_SAVE);
+    }
+}
+
+
+static void recfile_finalize()
+{
+	ESP_LOGI(TAG,"recfile finalize  %d bytes, %d bits",recfile.bytecount,recfile.bitcount );
+	recfile.state=TAPRF_INIT;
+
+}
+
+#endif
+
+static void rec_hdr_puls(uint32_t duration){
+	if(recfile.state==TAPRF_INIT){
+		recfile.pulscount=0;
+		recfile.state=TAPRF_HDR_STARTED;
+	} else if(recfile.state==TAPRF_HDR_STARTED || recfile.state==TAPRF_HDR_RECEIVED){
+		recfile.pulscount++;
+		if(recfile.pulscount==256){ /* ace ROM reuires 256 pulses, choose about th same here */
+			ESP_LOGW(TAG,"TAPRF_HDR_RECEIVED\n");
+			recfile.state=TAPRF_HDR_RECEIVED;
+		}
+//	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+//		recfile_bit(1);
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		ESP_LOGW(TAG,"Follow-up Header %d %d ",recfile.bitcount,recfile.bytecount);
+		recfile_finalize();
+		recfile.pulscount=0;
+		recfile.state=TAPRF_HDR_STARTED;
+	} else {
+		ESP_LOGW(TAG,"unknown HDR puls ");
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void rec_0_puls(){
+
+	if(recfile.state==TAPRF_HDR_RECEIVED){
+		ESP_LOGW(TAG,"TAPRF_RETRIEVE_DATA0\n");
+		recfile.state=TAPRF_RETRIEVE_DATA;
+		recfile.bytecount=0;
+		recfile.bitcount=0;
+    	recfile.data=0;
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		recfile_bit(0);
+	} else {
+		ESP_LOGW(TAG,"unknown 0 puls ");
+		recfile.state=TAPRF_INIT;
+	}
+
+}
+
+static void rec_1_puls(uint32_t duration){
+	if(recfile.state==TAPRF_HDR_STARTED || recfile.state==TAPRF_HDR_RECEIVED){
+		ESP_LOGW (TAG, "rec_1_puls during HDR %d us", SAMPLES_to_USEC(duration) );
+	} else if (recfile.state==TAPRF_RETRIEVE_DATA){
+		recfile_bit(1);
+	} else {
+		ESP_LOGW(TAG,"unknown 1 puls ");
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void rec_noise_puls(){
+	if(recfile.state!=TAPRF_INIT){
+		ESP_LOGW(TAG,"RESET after noise pulse\n");
+	}
+	recfile.state=TAPRF_INIT;
+}
+
+
+static bool actual_logic_level=0;
+static uint32_t level_cnt=0;
+static uint32_t puls_cnt=0;
+
+
+static void analyze_1_to_0(uint32_t duration){
+	// end of high phase,  245 for 0 , 488 for 1 , or 618us for pilot, 277 for end mark, 1.288 for gap 
+	if (duration<USEC_TO_SAMPLES(150))   rec_noise_puls();
+	else if (duration<=USEC_TO_SAMPLES(350))   rec_0_puls();
+	else if (duration<=USEC_TO_SAMPLES(550))   rec_1_puls(duration);
+	else if (duration<=USEC_TO_SAMPLES(680))   rec_hdr_puls(duration);
+
+
+	if(duration<2 || duration>500 || (puls_cnt&0x1ff)< 5 )	ESP_LOGW (TAG, "High pulse %d smpls, %d us",duration, SAMPLES_to_USEC(duration) );
+	puls_cnt++;
+
+}
+
+static void check_on_const_level(){
+	if(recfile.state!=TAPRF_INIT && level_cnt>USEC_TO_SAMPLES(3000)){
+		if (recfile.state==TAPRF_RETRIEVE_DATA)
+			recfile_finalize();
+		else{
+			ESP_LOGW(TAG,"RESET after silence\n");
+		}
+		recfile.state=TAPRF_INIT;
+	}
+}
+
+static void analyze_0_to_1(uint32_t duration){
+	if(duration>1000)	ESP_LOGW (TAG, "High after long low - %d smpls, %d us",duration, SAMPLES_to_USEC(duration));
+}
+
+int __builtin_clz (unsigned int x);
+int __builtin_ctz (unsigned int x); // trailing zeros
+
+/* every incoming 8-bit sample MSB first */
+void IRAM_ATTR rx_checksample(uint8_t data)
+{
+	if (data==0) {
+		if(actual_logic_level){
+			analyze_1_to_0(level_cnt);
+			actual_logic_level=false;
+			level_cnt=8;
+		} else {
+			level_cnt+=8;
+		}
+	} else if (data==0xff){
+		if(!actual_logic_level){
+			analyze_0_to_1(level_cnt);
+			actual_logic_level=true;
+			level_cnt=8;
+		} else {
+			level_cnt+=8;
+		}
+	} else {
+		// level change within byte, assume just one transition
+		int cnt_newlvl = __builtin_ctz( data^(actual_logic_level?0:0xff)  );
+		level_cnt+=8-cnt_newlvl;
+		if(actual_logic_level)
+			analyze_1_to_0(level_cnt);
+		else
+			analyze_0_to_1(level_cnt);
+		actual_logic_level=!actual_logic_level;
+		level_cnt=cnt_newlvl;
+	} 
+}
+
+
+static void on_rx_data(uint8_t* data, int size_bits){
+	static uint32_t acc_kbytes=0;
+	ESP_LOGD (TAG, "on_rx_data %d bits",size_bits);
+	acc_kbytes+=size_bits/8192;
+	if ((acc_kbytes&0xff)==0) ESP_LOGW (TAG, "on_rx_data acc %d Mbytes %x, plscnt=%d ",acc_kbytes/1024,data[0],puls_cnt);
+	// todo we could quick-check for all-0 here as this is the usual case
+	if( level_cnt>USEC_TO_SAMPLES(2500) && !actual_logic_level){
+		for(int i=0;i<size_bits/8;i++){
+			if(data[i]) goto not_just_all_0;
+		}
+		// simply have all-0
+		level_cnt+=size_bits;
+		check_on_const_level();
+	} else {
+
+not_just_all_0:
+
+		for(int i=0;i<size_bits/8;i++){
+			rx_checksample(data[i]);
+		}
+	}
+}
 
 void taps_rx_set_queue_to_use(QueueHandle_t rx_evt_q){
 	rx_evt_queue=rx_evt_q;
