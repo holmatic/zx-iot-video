@@ -167,13 +167,8 @@ void zxfimg_create(zxfimg_prog_t prog_type) {
 	}
 }
 
-uint8_t zxfimg_get_img(uint16_t filepos) {
-    //if(filepos>=16444-img_offs && filepos<16477-img_offs){
-	//if(filepos>=16477-img_offs && filepos<16508-img_offs){		
-	//	if(memimg[filepos]!=0 && memimg[filepos]!=ldrfile[filepos]) ESP_LOGW(TAG, "Printer buf %d contains %02x",filepos+img_offs,memimg[filepos]);
-	//	return ldrfile[filepos-33]; 
-	//}
-    return memimg[filepos];
+uint8_t *zxfimg_get_img() {
+    return memimg;
 }
 
 void  zxfimg_set_img(uint16_t filepos,uint8_t data) {

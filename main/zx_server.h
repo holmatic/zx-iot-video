@@ -45,9 +45,17 @@ typedef enum {
 } zxserv_evt_type_t;
 
 
+
 #define FILE_NOT_ACTIVE 0
 #define FILE_TAG_NORMAL 101
 #define FILE_TAG_COMPRESSED 202
+
+
+#define ZX_SAVE_TAG_LOADER_RESPONSE 70	// Initial loader responds with this tag and the RAMTOP info
+#define ZX_SAVE_TAG_MENU_RESPONSE   73	// Initial loader responds with this tag and the RAMTOP info
+
+
+
 
 typedef struct {
     zxserv_evt_type_t  evt_type;   /*!< sfzx_evt_type_t */

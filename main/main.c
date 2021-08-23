@@ -149,10 +149,9 @@ static void bled_timer_event( TimerHandle_t pxTimer )
 {
     static uint16_t count=0; /* cycle count */
     bool led_on=false;
-    /*
     bool slowmode_detected=(zxsrv_get_zx_status()==ZXSG_SLOWM_50HZ ||  zxsrv_get_zx_status()==ZXSG_SLOWM_60HZ  ); 
     ++count;
-    if (stzx_is_transfer_active()){
+    if (taps_is_tx_active()){
         led_on = ((count&3)==1);
     } else if (zxsrv_get_zx_status()==ZXSG_FILE_DATA){
         led_on = ((count&3)>1);
@@ -162,7 +161,7 @@ static void bled_timer_event( TimerHandle_t pxTimer )
         if (count==10) led_on = wifi_sta_is_connected(); 
         if (count>2500/BLED_CYCLE_MS && slowmode_detected) count=0; 
         if (count>5000/BLED_CYCLE_MS) count=0; 
-    }*/
+    }
     if (count==1) led_on = true; 
     if (count>5000/BLED_CYCLE_MS) count=0; 
 
@@ -210,14 +209,13 @@ void app_main()
     nvs_sys_init();
     bled_init();
     zxsrv_init();
-    taps_init();
+    taps_init(NULL);
     sfzx_init();
     user_knob_init();
     vid_init();
     lcd_disp_init();
 
     if(0) ledmx_init(); /* support for 64x64 low-res-graphics LED panel display, highly experimental and non-optimized  */
-    //taps_init();
     video_attr_init();
     if(1) vga_disp_init();
 

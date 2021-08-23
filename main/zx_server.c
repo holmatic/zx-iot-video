@@ -21,6 +21,9 @@ Works asynchronously, thus communication is done via queues
 #include "esp_vfs.h"
 #include "nvs.h"
 #include "zx_serv_dialog.h"
+#include "tape_signal.h"
+
+
 #include "zx_server.h"
 #include "zx_file_img.h"
 
@@ -34,64 +37,6 @@ static QueueHandle_t msg_queue=NULL;
 
 static uint8_t file_first_bytes[FILFB_SIZE]; // storage for analyzing the file name or commands etc
 static uint8_t file_name_len=0; 
-
-
-
-static void send_zxf_loader_uncompressed(){
-    uint16_t imgsize;
-    ESP_LOGI(TAG,"Send (uncompressed) loader \n");
-    zxfimg_create(ZXFI_LOADER);
-    imgsize=zxfimg_get_size();
-    stzx_send_cmd(STZX_FILE_START,FILE_TAG_NORMAL);
-    stzx_send_cmd(STZX_FILE_DATA,0xA6);       /* one byte file name */             
-    for(size_t i=0;i<imgsize;i++){
-        stzx_send_cmd(STZX_FILE_DATA,zxfimg_get_img(i));                    
-    }
-    stzx_send_cmd(STZX_FILE_END,0);
-    zxfimg_delete();
-}
-
-
-static void send_zxf_image_compr(){
-    uint16_t imgsize=zxfimg_get_size();
-    stzx_send_cmd(STZX_FILE_START,FILE_TAG_COMPRESSED);
-    for(uint16_t i=0;i<imgsize;i++){
-        stzx_send_cmd(STZX_FILE_DATA, zxfimg_get_img(i) );                    
-    }
-   stzx_send_cmd(STZX_FILE_END,0);
-}
-
-static void zxsrv_filename_received(){
-    char namebuf[FILFB_SIZE];
-    zx_string_to_ascii(file_first_bytes,file_name_len,namebuf);
-    ESP_LOGI(TAG,"SAVE file, name [%s]\n",namebuf);
-}
-
-static void save_received_zxfimg(){
-    FILE *fd = NULL;
-    uint16_t i;
-    const char *dirpath="/spiffs/";
-    char entrypath[ESP_VFS_PATH_MAX+17];
-    char namebuf[FILFB_SIZE];
-    zx_string_to_ascii(file_first_bytes,file_name_len,namebuf);
-    if(NULL==strchr(namebuf,'.') ){ /* add extension if none provided */
-        strlcpy(namebuf + strlen(namebuf), ".p", FILFB_SIZE - strlen(namebuf));
-    }
-    ESP_LOGI(TAG,"SAVE - file [%s]\n",namebuf);
-    strlcpy(entrypath, dirpath, sizeof(entrypath));
-    strlcpy(entrypath + strlen(dirpath), namebuf, sizeof(entrypath) - strlen(dirpath));
-    fd = fopen(entrypath, "wb");
-    if (!fd) {
-        ESP_LOGE(TAG, "Failed to write to file : %s", entrypath);
-        return;
-    }
-    for(i=0; i<zxfimg_get_size(); i++) {
-        fputc( zxfimg_get_img(i), fd );
-    } 
-    /* Close file after write complete */
-    fclose(fd);
-    ESP_LOGI(TAG,"SAVE - done\n");
-}
 
 
 
@@ -121,6 +66,70 @@ static void set_zx_outlevel_inverted(bool newval)
         nvs_close(my_handle);
     }
 }
+ 
+ 
+static void send_zxf_loader_uncompressed(){
+    ESP_LOGI(TAG,"Send (uncompressed) loader N \n");
+    zxfimg_create(ZXFI_LOADER);
+    uint8_t namechar=0xA6;  /* one byte file name */ 
+
+    taps_tx_packet_t p;
+    p.packet_type_id=TTX_DATA_ZX81_STDSPEED;
+    p.name=&namechar;
+    p.namesize=1;
+    p.data=zxfimg_get_img();
+    p.datasize=zxfimg_get_size();
+    p.para=0;
+    taps_tx_enqueue(&p, true);
+
+    zxfimg_delete();
+}
+
+
+static void send_zxf_image_compr(){
+    taps_tx_packet_t p;
+    p.packet_type_id=TTX_DATA_ZX81_QLOAD;
+    p.name=NULL;
+    p.namesize=0;
+    p.data=zxfimg_get_img();
+    p.datasize=zxfimg_get_size();
+    p.para=get_zx_outlevel_inverted()?1:0;
+    taps_tx_enqueue(&p, true);
+}
+
+static void zxsrv_filename_received(){
+    char namebuf[FILFB_SIZE];
+    zx_string_to_ascii(file_first_bytes,file_name_len,namebuf);
+    ESP_LOGI(TAG,"SAVE file, name [%s]\n",namebuf);
+}
+
+static void save_received_zxfimg(){
+    FILE *fd = NULL;
+    uint16_t i;
+    const char *dirpath="/spiffs/";
+    char entrypath[ESP_VFS_PATH_MAX+17];
+    char namebuf[FILFB_SIZE];
+    zx_string_to_ascii(file_first_bytes,file_name_len,namebuf);
+    if(NULL==strchr(namebuf,'.') ){ /* add extension if none provided */
+        strlcpy(namebuf + strlen(namebuf), ".p", FILFB_SIZE - strlen(namebuf));
+    }
+    ESP_LOGI(TAG,"SAVE - file [%s]\n",namebuf);
+    strlcpy(entrypath, dirpath, sizeof(entrypath));
+    strlcpy(entrypath + strlen(dirpath), namebuf, sizeof(entrypath) - strlen(dirpath));
+    fd = fopen(entrypath, "wb");
+    if (!fd) {
+        ESP_LOGE(TAG, "Failed to write to file : %s", entrypath);
+        return;
+    }
+    for(i=0; i<zxfimg_get_size(); i++) {
+        fputc( zxfimg_get_img()[i], fd );
+    } 
+    /* Close file after write complete */
+    fclose(fd);
+    ESP_LOGI(TAG,"SAVE - done\n");
+}
+
+
 
 
 #define EVT_TIMEOUT_MS 50
@@ -132,7 +141,7 @@ static void zxsrv_task(void *arg)
     uint16_t watchdog_cnt=0;    
     zxserv_event_t evt;
     ESP_LOGI(TAG,"sfzx_task START \n");
-    stzx_set_out_inv_level( get_zx_outlevel_inverted()  );  /* different ULA flavors need different levels - TODO bring to NVS */
+    /* different ULA flavors need different levels - TODO bring to NVS */
     while(true){
 		if(pdTRUE ==  xQueueReceive( msg_queue, &evt, EVT_TIMEOUT_MS / portTICK_RATE_MS ) ) {
 			//ESP_LOGI(TAG,"Retrieved evt %d",evt.evt_type);
@@ -213,7 +222,6 @@ static void zxsrv_task(void *arg)
                 if(++watchdog_cnt > COMPRLOAD_TIMEOUT_MS/EVT_TIMEOUT_MS  ){
                     ESP_LOGW(TAG,"Compressed load watchdog - maybe wrong level (%c)!",(get_zx_outlevel_inverted() ? 'i':'n' ) );
                     set_zx_outlevel_inverted( ! get_zx_outlevel_inverted() );
-                    stzx_set_out_inv_level( get_zx_outlevel_inverted()  );
                     watchdog_cnt=0;
                 }
             }
