@@ -70,6 +70,8 @@ static void set_zx_outlevel_inverted(bool newval)
  
 static void send_zxf_loader_uncompressed(){
     ESP_LOGI(TAG,"Send (uncompressed) loader N \n");
+    taps_tx_wait_all_done();
+
     zxfimg_create(ZXFI_LOADER);
     uint8_t namechar=0xA6;  /* one byte file name */ 
 
@@ -80,7 +82,7 @@ static void send_zxf_loader_uncompressed(){
     p.data=zxfimg_get_img();
     p.datasize=zxfimg_get_size();
     p.para=0;
-    taps_tx_enqueue(&p, true);
+    taps_tx_enqueue(&p, false);
 
     zxfimg_delete();
 }
@@ -88,6 +90,7 @@ static void send_zxf_loader_uncompressed(){
 
 static void send_zxf_image_compr(){
     taps_tx_packet_t p;
+    taps_tx_wait_all_done();
     p.packet_type_id=TTX_DATA_ZX81_QLOAD;
     p.name=NULL;
     p.namesize=0;
@@ -147,14 +150,14 @@ static void zxsrv_task(void *arg)
 			//ESP_LOGI(TAG,"Retrieved evt %d",evt.evt_type);
             if(evt.evt_type==ZXSG_HIGH){
                 // Load
-                //if(!stzx_is_transfer_active()){
+                if(!taps_is_tx_active()){
                     send_zxf_loader_uncompressed();
                     if (watchdog_cnt==0) watchdog_cnt=1;
                     // next - main menu
                     zxdlg_reset();
-                //} else {
-                //    ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
-                //}
+                } else {
+                    ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
+                }
             }else if(evt.evt_type==ZXSG_FILE_DATA){
                 if(evt.addr<FILFB_SIZE){
                     file_first_bytes[evt.addr]=(uint8_t) evt.data;
@@ -214,7 +217,12 @@ static void zxsrv_task(void *arg)
                     watchdog_cnt=0; /* deactivate watchdog after succesfully loaded */
                 }
             } else {
-                ESP_LOGI(TAG,"Unexpected evt %d %d",evt.evt_type,watchdog_cnt);
+                if (evt.evt_type==ZXSG_SAVE) ESP_LOGI(TAG,"Evt SAVE");
+                else if (evt.evt_type==ZXSG_SILENCE) ESP_LOGI(TAG,"Evt SILENCE");
+                else if (evt.evt_type==ZXSG_HIGH) ESP_LOGI(TAG,"Evt HIGH");
+                else if (evt.evt_type==ZXSG_NOISE) ESP_LOGI(TAG,"Evt NOISE");
+                else 
+                    ESP_LOGI(TAG,"Unexpected evt %d %d",evt.evt_type,watchdog_cnt);
             }
 		} else {
             /* no new event, check if we have a failure in compressed loading */

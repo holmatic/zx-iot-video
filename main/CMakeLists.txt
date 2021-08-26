@@ -1,4 +1,4 @@
-set(COMPONENT_SRCS "main.c" "file_server.c" "video_attr.c" "tape_io.c" "tape_signal.c" "lcd_display.c" "vga_display.c" "led_matrix.c" "iis_videosig.c" "signal_from_zx.c" "zx_server.c" "zx_serv_dialog.c" "wifi_sta.c" "zx_file_img.c")
+set(COMPONENT_SRCS "main.c" "file_server.c" "video_attr.c" "tape_io.c" "tape_signal.c" "tape_zx.c" "lcd_display.c" "vga_display.c" "user_knob.c" "led_matrix.c" "iis_videosig.c" "signal_from_zx.c" "zx_server.c" "zx_serv_dialog.c" "wifi_sta.c" "zx_file_img.c")
 
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 

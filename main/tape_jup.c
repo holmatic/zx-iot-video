@@ -598,15 +598,3 @@ not_just_all_0:
 		}
 	}
 }
-
-void taps_rx_set_queue_to_use(QueueHandle_t rx_evt_q){
-	rx_evt_queue=rx_evt_q;
-}
-
-// call once at startup
-void taps_init()
-{
-	tx_cmd_queue=xQueueCreate(5, sizeof( taps_tx_packet_t ) );
-	tapio_init(on_rx_data);
-	xTaskCreate(taps_task, "taps_task", 1024 * 3, NULL, 9, NULL);
-}
