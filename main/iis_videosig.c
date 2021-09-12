@@ -553,7 +553,7 @@ static void vid_in_task(void*arg)
 				vid_ignore_line(&line_acc_bits);
 			}
 			video_synced_state= (video_synced_cnt>=2);
-			vid_find_hsync(&line_acc_bits,&line_bits_result, line<4 || line>240  ); /* in FAST mode, we may have a strange resync at line 247*/
+			vid_find_hsync(&line_acc_bits,&line_bits_result, line<56 /* was 4 but got trouble with DrBeeps 1k games */ || line>240  ); /* in FAST mode, we may have a strange resync at line 247*/
 			if(lbcount<20 && line>4 && line_bits_result>usec_to_samples(62) && line_bits_result<usec_to_samples(66)){
 				line_bits_acc+=line_bits_result;
 				lbcount++;
