@@ -530,8 +530,10 @@ static uint8_t pending_user_adj=0;
 static void vid_in_task(void*arg)
 {
 	bool last_video_synced_state=false;
+	bool had_video_synced_state=false;
 	uint32_t frame_count=0;
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
+	uint32_t noisepattern=0x55555555; 
 	pixel_adjust=get_pixel_adjust_nv();
 	vline_adjust=get_vert_line_adjust_nv();
 	pixels_per_vline=get_clocks_per_line_nv();
@@ -547,7 +549,18 @@ static void vid_in_task(void*arg)
 		vid_find_hsync(&line_acc_bits,&line_bits_result, true); // line_bits_result needs to be low/zero here
 		line_bits_result=0;
 		for( line=1; line<280; line++){
-			if(line>=vline_adjust && line<240+vline_adjust){
+			if(!had_video_synced_state){
+				if( line>=vline_adjust+1 && line<240+vline_adjust-1){
+					// pattern
+					uint32_t woffset=(line-vline_adjust)*10;
+					for(int w=0;w<10;w++){
+						vid_pixel_mem[ w+woffset ]=noisepattern;
+						noisepattern=noisepattern*7; // pseudo random
+						noisepattern^=noisepattern>>8; // pseudo random
+					}
+				}
+				vid_ignore_line(&line_acc_bits);
+			} else if( line>=vline_adjust && line<240+vline_adjust){
 				vid_scan_line(&line_acc_bits, line-vline_adjust,line_bits_inc, frame_count%500==50?0:0 );
 			} else {
 				vid_ignore_line(&line_acc_bits);
@@ -579,6 +592,7 @@ static void vid_in_task(void*arg)
 		calpixel_framecheck();
 		if(video_synced_state!=last_video_synced_state){
 			last_video_synced_state=video_synced_state;
+			if(video_synced_state) had_video_synced_state=true;
 			sfzx_report_video_signal_status(video_synced_state);
 			timeout_verbose=60;
 		}
@@ -685,6 +699,7 @@ void vid_init()
     //configure GPIO with the given settings
     gpio_config(&io_conf);
 
-
-
+	for(int i=0; i<sizeof(vid_pixel_mem)/sizeof(uint32_t);i++){
+		vid_pixel_mem[i]= ((i/10)&1) ? 0x55555555 : 0xaaaaaaaa;
+	}
 }
