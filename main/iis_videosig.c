@@ -113,8 +113,10 @@ static inline uint32_t usec_to_samples(uint32_t usecs){
 	return (usecs*20);
 }
 
-
+/* some global (ehem) variables */
 uint32_t vid_pixel_mem[10*240];
+uint8_t vid_scan_startline=0+2;   // default   0, first line that is scanned and put into the pixel mem, lines above are not touched by this module 
+uint8_t vid_scan_endline=239-2;   // default 239, last line that is scanned and put into the pixel mem, lines above are not touched by this module
 
 
 static int last_sync_timer=0; // set >0 when we have a sync, counts down to 0 after sync lost
@@ -530,7 +532,7 @@ static uint8_t pending_user_adj=0;
 static void vid_in_task(void*arg)
 {
 	bool last_video_synced_state=false;
-	bool had_video_synced_state=false;
+	bool had_video_synced_state=false; /* todo bring this functionality to external module using vid_scan_startline/endline */
 	uint32_t frame_count=0;
 	uint32_t line_bits_inc=0x00031900; // rough default for 20MHz vs 6.5 Mhz
 	uint32_t noisepattern=0x55555555; 
@@ -550,7 +552,7 @@ static void vid_in_task(void*arg)
 		line_bits_result=0;
 		for( line=1; line<280; line++){
 			if(!had_video_synced_state){
-				if( line>=vline_adjust+1 && line<240+vline_adjust-1){
+				if( line>=vline_adjust+vid_scan_startline && line<=vid_scan_endline+vline_adjust){
 					// pattern
 					uint32_t woffset=(line-vline_adjust)*10;
 					for(int w=0;w<10;w++){
@@ -560,13 +562,13 @@ static void vid_in_task(void*arg)
 					}
 				}
 				vid_ignore_line(&line_acc_bits);
-			} else if( line>=vline_adjust && line<240+vline_adjust){
+			} else if( line>=vline_adjust+vid_scan_startline && line<=vid_scan_endline+vline_adjust){
 				vid_scan_line(&line_acc_bits, line-vline_adjust,line_bits_inc, frame_count%500==50?0:0 );
 			} else {
 				vid_ignore_line(&line_acc_bits);
 			}
 			video_synced_state= (video_synced_cnt>=2);
-			vid_find_hsync(&line_acc_bits,&line_bits_result, line<56 /* was 4 but got trouble with DrBeeps 1k games */ || line>240  ); /* in FAST mode, we may have a strange resync at line 247*/
+			vid_find_hsync(&line_acc_bits,&line_bits_result, line<56 /* was 4 but got trouble with DrBeeps 1k games (there 56) */ || line>240  ); /* in FAST mode, we may have a strange resync at line 247*/
 			if(lbcount<20 && line>4 && line_bits_result>usec_to_samples(62) && line_bits_result<usec_to_samples(66)){
 				line_bits_acc+=line_bits_result;
 				lbcount++;
