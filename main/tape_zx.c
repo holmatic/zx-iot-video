@@ -117,7 +117,7 @@ void stzx_setup_new_file(const taps_tx_packet_t* txp){
 	zxfile.overall_filesize=txpacket.namesize+txpacket.datasize;
 	zxfile.currsrc=txpacket.namesize ? txpacket.name : txpacket.data;
 	zxfile.file_tag=txpacket.packet_type_id;
-	outlevel_inv=txpacket.para;
+	outlevel_inv=0;// TODOTODDO txpacket.para;
 }
 
 static uint8_t getbyte(){
