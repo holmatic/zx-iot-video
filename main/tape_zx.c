@@ -16,15 +16,15 @@
 
 static const char* TAG = "tapzx";
 
-#define OVERSAMPLE 1
-#define MILLISEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*ms*TAPIO_SAMPLE_SPEED_HZ/1000/8) 
-#define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000/8) 
 
-#define USEC_TO_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000) 
-#define SAMPLES_to_USEC(samples)   (samples*1000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
+#define MILLISEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*ms*TAPIO_SAMPLE_SPEED_HZ/1000/8) 
+#define USEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000/8) 
+
+#define USEC_TO_SAMPLES(ms)   (TAPIO_OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000) 
+#define SAMPLES_to_USEC(samples)   (samples*1000/(TAPIO_OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
-#define BYTE_SAMPLES_to_USEC(bytes)   (bytes*8000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
+#define BYTE_SAMPLES_to_USEC(bytes)   (bytes*8000/(TAPIO_OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
 
@@ -40,7 +40,7 @@ static inline void set_sample(uint8_t* samplebuf, uint32_t ix, uint8_t val)
 {
     samplebuf[ix]=val;
 }
-#if OVERSAMPLE>1
+#if TAPIO_OVERSAMPLE>1
 const uint8_t wav_zero[]={  
 		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
@@ -147,8 +147,8 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 	    while(ix<buffer_size) {
 			if(!zxfile.startbit_done && zxfile.remaining_wavsamples==0){
 					/* good point to possibly exit here as one full byte is done...*/
-					if(ix>buffer_size-50*OVERSAMPLE){
-						// end of packet will create a 30-60us break at low level, shorter for bigger OVERSAMPLE
+					if(ix>buffer_size-50*TAPIO_OVERSAMPLE){
+						// end of packet will create a 30-60us break at low level, shorter for bigger TAPIO_OVERSAMPLE
 						break;
 					} 
 					zxfile.wavsample=outlevel_inv ? wav_compr_hdr_inv : wav_compr_hdr_std;
@@ -165,7 +165,7 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 						zxfile.data=getbyte();
 					}
 
-#if OVERSAMPLE > 1
+#if TAPIO_OVERSAMPLE == 4
 					/* use != operator as logical XOR */
 					if(  (0==(zxfile.data &  (0x80 >> (zxfile.bitcount&7) ) ) ) != (outlevel_inv!=0)   ){
 						zxfile.wavsample=wav_compr_zero;  // 0 data is high level for std ZX81 
@@ -175,7 +175,7 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 						zxfile.remaining_wavsamples=sizeof(wav_compr_one);
 					};
 					zxfile.bitcount++;
-#else
+#elif TAPIO_OVERSAMPLE == 1
 					uint8_t smpl;
 					smpl=0;
 					if(0==(zxfile.data & (0x80 >> (zxfile.bitcount&7)  ))) smpl|=0xf0;
@@ -184,6 +184,8 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 					zxfile.bitcount++;
 					smpl ^= outlevel_inv ? 0xee : 0x11;
 					set_sample(samplebuf,ix++,  smpl );
+#else
+	#error "Invalid oversample rate"
 #endif
 					if( (zxfile.bitcount&7) ==0){
 						zxfile.startbit_done=0;

@@ -11,10 +11,9 @@
 #define TAP_IN_PIN 25
 
 #define  BASE_SPEED_HZ  TAPIO_SAMPLE_SPEED_HZ
-#define  OVERSAMPLE 1
 #define  NUM_PARALLEL_TRANSFERS  4
-#define MILLISEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*ms*BASE_SPEED_HZ/1000/8) 
-#define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*BASE_SPEED_HZ/1000)/1000/8) 
+#define MILLISEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*ms*BASE_SPEED_HZ/1000/8) 
+#define USEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*(ms*BASE_SPEED_HZ/1000)/1000/8) 
 
 static const char* TAG = "tapio";
 static spi_device_handle_t tapio_spi;	// SPI used for tape in and out sampling. a I2S would fit better but this is not available when 2x I2S used for video conversion
@@ -98,7 +97,7 @@ void tapio_init(tapio_receive_callback_t on_incomming_data){
 
 	// configure the (pseudo) device - we just use MOSI and MISO for sampling
     spi_device_interface_config_t devcfg={
-        .clock_speed_hz=OVERSAMPLE*125*1000,    // Clock out at 125khz MHz
+        .clock_speed_hz=TAPIO_OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ,    // Clock out at 125khz MHz
         .mode=0,                                // SPI mode 0
         .spics_io_num=-1,               		// CS pin, not connected here
         .queue_size=3,                          // We want to be able to queue several transactions
