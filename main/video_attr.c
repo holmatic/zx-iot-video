@@ -392,9 +392,16 @@ static void create_fancy_colours()
 #define VBIT_CHAR_MISMATCH 0xff
 #define VBIT_MAXSCORE 4
 
+#define CHAR_PER_LINE 32
 
-static uint8_t ocr_code[32];
-static uint8_t ocr_score[32];
+static uint8_t ocr_code[CHAR_PER_LINE];
+static uint8_t ocr_score[CHAR_PER_LINE];
+static uint8_t ocr_code_changed=1;
+
+
+uint8_t tape_string_name_len=0;
+uint8_t tape_string_name[CHAR_PER_LINE];
+
 
 static void ocr_report_char(uint8_t xpos, uint8_t ypos, uint8_t charcode){
   if(charcode==ocr_code[xpos]){
@@ -405,9 +412,52 @@ static void ocr_report_char(uint8_t xpos, uint8_t ypos, uint8_t charcode){
   else{
     if(ocr_score[xpos]==0){
       ocr_code[xpos]=charcode;  /* old status expired, have new */
-      ESP_LOGW(TAG, "OCR code %02x at pos %d",charcode,xpos );        
+      ocr_code_changed=1;
+      ESP_LOGD(TAG, "OCR code %02x at pos %d",charcode,xpos );        
     }
     else ocr_score[xpos]--;
+  }
+}
+
+#define ASCII2ZXCODE(a) (a+38-'A') /* ZX code of A is 38*/
+
+static void ocr_check_input(){
+  uint8_t startpos;
+  uint8_t qmpos[2];
+  ocr_code_changed=0;
+  for(startpos=0;startpos<CHAR_PER_LINE;startpos++){
+    if(ocr_code[startpos]==0xff) return; /* invalid pattern */
+    if(ocr_code[startpos]>64) continue; /* inverted, maybe cursor*/
+    if(ocr_code[startpos]!=0) break; /* regular char */
+  }
+  if(startpos>=CHAR_PER_LINE) return; /* was empty */
+  if(ocr_code[startpos]    ==ASCII2ZXCODE('L')){
+    if(startpos>=CHAR_PER_LINE-5) return; /* not enough space left in line */
+    /* LOAD "filename" */
+    if(ocr_code[++startpos]!=ASCII2ZXCODE('O')) return;
+    if(ocr_code[++startpos]!=ASCII2ZXCODE('A')) return;
+    if(ocr_code[++startpos]!=ASCII2ZXCODE('D')) return;
+    if(ocr_code[++startpos]!=0) return;
+    ++startpos;
+    uint8_t num_qm=0;
+    /* Count the quotation marks " (code 11) */
+    for(uint8_t i=startpos;i<CHAR_PER_LINE;i++){
+      if(ocr_code[i]==11){
+        num_qm++;
+        if(num_qm>2) return;
+        qmpos[num_qm-1]=i;
+      }
+    }
+    if(num_qm!=2) return;
+    /* have two quotation marks behind load! */
+    /* copy name without cursor etc */
+    tape_string_name_len=0;
+    for(uint8_t i=qmpos[0]+1;i<qmpos[1];i++){
+      uint8_t s=ocr_code[i];
+      if(s>64) continue;
+      tape_string_name[tape_string_name_len++]=s;
+      ESP_LOGW(TAG, "OCR LOAD name %02x",s );        
+    }
   }
 }
 
@@ -493,7 +543,13 @@ static void vid_attr_task(void*arg)
           create_fancy_colours();
         }
         vTaskDelay(5 / portTICK_RATE_MS); 
-        if(frames&1) ocr_scan_screen();
+        if(frames&1){
+          ocr_scan_screen(); /* will set ocr_code_changed to 1 for change */
+          if(ocr_code_changed){
+            if(++ocr_code_changed>3) /* wait till stable */
+              ocr_check_input(); /* will set ocr_code_changed back to 0 */
+          }
+        }
     }
 }
 

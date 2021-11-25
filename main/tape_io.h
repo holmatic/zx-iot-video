@@ -18,7 +18,7 @@ extern "C" {
 
 #define  TAPIO_SAMPLE_SPEED_HZ  125000
 
-#define  TAPIO_OVERSAMPLE 4
+#define  TAPIO_OVERSAMPLE 4  // lower oversamples currently work unreliably with orig ZX81, seems okay with ZXNU
 
 // buffer size in bytes for receive and transmit; multiple alternating sets are used so watch for mem consumption when increasing
 #define  TAPIO_MAX_TRANSFER_LEN_BYTES  (1024) 

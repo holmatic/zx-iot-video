@@ -193,17 +193,25 @@ W2:
 	LD SP,HL
     LD HL, $0676   ; return address in NEXT-LINE like when LOADING
 	EX (SP),HL
-#if 0
-    ; run from calculator area
+    
+#if 1  ; we cannot run from  printer area directly if we load application programs from here
+    ; run loader from stack area
+    ; max used size for 1k programs is at $4009 + 949/952 bytes
+    ; the 32 byte loader fits at RAMTOP-60 givig stack just enough space
+    LD BC,-60
+	LD HL,(16388) ; RAMTOP
+    
+    ADD HL,BC
+    PUSH HL     ; address of quick loader on stack, can use RET later to go there
+    EX DE,HL
     LD HL,PLOADER
-    LD DE,membot
     LD BC,32
     LDIR
-
-	;LD HL,ELINEHI
-	;INC (HL) ; make sure no match during load
+    ; LD DE,32708 hardcoded position, would not work with moved RAMTOP
+	LD HL,ELINEHI
+	INC (HL) ; make sure no match during load
 	LD HL,4009h	; start of BASIC area to load
-    jp membot
+    RET      ; go to calculated address below RAMTOP  jp 32708
 #else
 	LD HL,ELINEHI
 	INC (HL) ; make sure no match during load
@@ -233,7 +241,7 @@ line10:
  
 dfile: 
    db $76 
-   db c_Z,c_X,0,c_I,c_O,,c_T,
+   db c_Z,c_X,
    db $76,$76,$76,$76,$76,$76,$76,$76 
    db $76,$76,$76,$76,$76,$76,$76,$76 
    db $76,$76,$76,$76,$76,$76,$76,$76 

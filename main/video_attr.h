@@ -34,6 +34,10 @@ void vidattr_set_inv_mode(bool invert);
 void video_attr_init();
 
 
+extern uint8_t tape_string_name_len;
+extern uint8_t tape_string_name[];
+
+
 
 
 #endif /* _VIDEO_ATTR_H_ */

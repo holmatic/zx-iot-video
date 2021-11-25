@@ -22,6 +22,7 @@ Works asynchronously, thus communication is done via queues
 #include "nvs.h"
 #include "zx_serv_dialog.h"
 #include "tape_signal.h"
+#include "video_attr.h"
 
 
 #include "zx_server.h"
@@ -68,7 +69,7 @@ static void set_zx_outlevel_inverted(bool newval)
 }
  
  
-static void send_zxf_loader_uncompressed(){
+static void send_zxf_loader_uncompressed(uint8_t* name_or_null){
     ESP_LOGI(TAG,"Send (uncompressed) loader N \n");
     taps_tx_wait_all_done();
 
@@ -77,12 +78,14 @@ static void send_zxf_loader_uncompressed(){
 
     taps_tx_packet_t p;
     p.packet_type_id=TTX_DATA_ZX81_STDSPEED;
-    p.name=&namechar;
+    p.name= name_or_null ? name_or_null : &namechar;
     p.namesize=1;
+    while(p.name[p.namesize-1] < 128) p.namesize++; /* find out actual length */
     p.data=zxfimg_get_img();
     p.datasize=zxfimg_get_size();
     p.para=0;
-    taps_tx_enqueue(&p, false);
+    taps_tx_enqueue(&p, true);
+    ESP_LOGI(TAG,"Name %d, data %d bytes \n",p.namesize,p.datasize);
 
     zxfimg_delete();
 }
@@ -143,6 +146,7 @@ static void zxsrv_task(void *arg)
 {
     uint16_t watchdog_cnt=0;    
     zxserv_event_t evt;
+    char* directload_filepath=NULL;
     ESP_LOGI(TAG,"sfzx_task START \n");
     /* different ULA flavors need different levels - TODO bring to NVS */
     while(true){
@@ -151,7 +155,13 @@ static void zxsrv_task(void *arg)
             if(evt.evt_type==ZXSG_HIGH){
                 // Load
                 if(!taps_is_tx_active()){
-                    send_zxf_loader_uncompressed();
+                    // check if name was given
+                    directload_filepath=NULL;
+                    if (tape_string_name_len){
+                        tape_string_name[tape_string_name_len-1] |= 0x80; /* mark end */
+                        directload_filepath = zxsrv_find_file_from_zxname(tape_string_name); /* see if we have a match */
+                    }
+                    send_zxf_loader_uncompressed( tape_string_name_len ? tape_string_name : NULL );
                     if (watchdog_cnt==0) watchdog_cnt=1;
                     // next - main menu
                     zxdlg_reset();
@@ -170,7 +180,7 @@ static void zxsrv_task(void *arg)
                         } 
                     }
                     if(file_first_bytes[0]==ZX_SAVE_TAG_MENU_RESPONSE+1 && evt.data==0x80){
-                            // send compressed second stage
+                            // return string
                             ESP_LOGI(TAG,"STRING INPUT addr %d \n",evt.addr); 
                             for(int i=0;i<=evt.addr;i++){
                                 ESP_LOGI(TAG,"  STR field %d %02X \n",evt.addr,file_first_bytes[i] ); 
@@ -185,12 +195,24 @@ static void zxsrv_task(void *arg)
                     if(evt.addr==1){
                         if(file_first_bytes[0]==ZX_SAVE_TAG_LOADER_RESPONSE){
                             // send compressed second stage
-                            ESP_LOGI(TAG,"Response from %dk ZX, send 2nd (compressed) stage %d\n",(evt.data-0x40)/4,watchdog_cnt );                        
-                            if (zxdlg_respond_from_key(0)){
-                                send_zxf_image_compr();
-                                if (watchdog_cnt==1) watchdog_cnt=2; /* watchdog armed, we need to check if the compressed loader loads successfully */
-                                zxfimg_delete();
+                            if(directload_filepath){
+                                ESP_LOGI(TAG,"Response from %dk ZX, send (compressed) file directly %d\n",(evt.data-0x40)/4,watchdog_cnt );                        
+                                // TODO cold respond with out of memory if RAM does not match the file
+                                if(zxsrv_load_file(directload_filepath)){
+                                    send_zxf_image_compr();
+                                    if (watchdog_cnt==1) watchdog_cnt=0; /* no watchdog here, may take too long */
+                                    zxfimg_delete();
+                                }
+                                directload_filepath=0;
+                            }else{
+                                ESP_LOGI(TAG,"Response from %dk ZX, send 2nd (compressed) stage %d\n",(evt.data-0x40)/4,watchdog_cnt );                        
+                                if (zxdlg_respond_from_key(0)){
+                                    send_zxf_image_compr();
+                                    if (watchdog_cnt==1) watchdog_cnt=2; /* watchdog armed, we need to check if the compressed loader loads successfully */
+                                    zxfimg_delete();
+                                }
                             }
+                            ESP_LOGI(TAG,"Response done\n"); 
                         } else if(file_first_bytes[0]==ZX_SAVE_TAG_MENU_RESPONSE){
                             // send key rsponse etc
                             ESP_LOGI(TAG,"MENU RESPONSE KEYPRESS code %02X \n",evt.data); 
@@ -202,7 +224,7 @@ static void zxsrv_task(void *arg)
                         }
                     }
                 }
-                if(file_name_len){
+                if(file_name_len && evt.addr>=file_name_len){
                     zxfimg_set_img(evt.addr-file_name_len,evt.data);
                     if(evt.addr>file_name_len+30 && zxfimg_get_size()==1+evt.addr-file_name_len ){
                         file_first_bytes[file_name_len-1] ^= 0x80; // convert all name to upper case                       

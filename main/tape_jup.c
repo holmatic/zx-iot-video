@@ -18,15 +18,14 @@ static const char* TAG = "taps";
 
 static void taps_task(void*arg);
 
-#define OVERSAMPLE 1
-#define MILLISEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*ms*TAPIO_SAMPLE_SPEED_HZ/1000/8) 
-#define USEC_TO_BYTE_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000/8) 
+#define MILLISEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*ms*TAPIO_SAMPLE_SPEED_HZ/1000/8) 
+#define USEC_TO_BYTE_SAMPLES(ms)   (TAPIO_OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000/8) 
 
-#define USEC_TO_SAMPLES(ms)   (OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000) 
-#define SAMPLES_to_USEC(samples)   (samples*1000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
+#define USEC_TO_SAMPLES(ms)   (TAPIO_OVERSAMPLE*(ms*TAPIO_SAMPLE_SPEED_HZ/1000)/1000) 
+#define SAMPLES_to_USEC(samples)   (samples*1000/(TAPIO_OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
-#define BYTE_SAMPLES_to_USEC(bytes)   (bytes*8000/(OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
+#define BYTE_SAMPLES_to_USEC(bytes)   (bytes*8000/(TAPIO_OVERSAMPLE*TAPIO_SAMPLE_SPEED_HZ/1000)) 
 
 
 
@@ -49,7 +48,7 @@ static inline void set_sample(uint8_t* samplebuf, uint32_t ix, uint8_t val)
 	
 	//samplebuf[ix^0x0003]=val ^ outlevel_inv;  // convert for endian byteorder
 }
-#if OVERSAMPLE>1
+#if TAPIO_OVERSAMPLE>1
 const uint8_t wav_zero[]={  
 		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
 		0x00,0x00,0x00,0x00,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x00,0x00,0x00,0x00,
@@ -130,8 +129,8 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 	    while(ix<MAX_TRANSFER_LEN_BYTES) {
 			if(!zxfile.startbit_done && zxfile.remaining_wavsamples==0){
 					/* good point to possibly exit here as one full byte is done...*/
-					if(ix>MAX_TRANSFER_LEN_BYTES-50*OVERSAMPLE){
-						// end of packet will create a 30-60us break at low level, shorter for bigger OVERSAMPLE
+					if(ix>MAX_TRANSFER_LEN_BYTES-50*TAPIO_OVERSAMPLE){
+						// end of packet will create a 30-60us break at low level, shorter for bigger TAPIO_OVERSAMPLE
 						break;
 					} 
 					zxfile.wavsample=outlevel_inv ? wav_compr_hdr_inv : wav_compr_hdr_std;
@@ -148,7 +147,7 @@ static bool fill_buf_from_file(uint8_t* samplebuf, QueueHandle_t dataq, size_t b
 						if(pdTRUE != xQueueReceive( dataq, &zxfile.data, 0 ) ) ESP_LOGE(TAG, "End of data");
 					}
 
-#if OVERSAMPLE > 1
+#if TAPIO_OVERSAMPLE > 1
 					/* use != operator as logical XOR */
 					if(  (0==(zxfile.data &  (0x80 >> (zxfile.bitcount&7) ) ) ) != (outlevel_inv!=0)   ){
 						zxfile.wavsample=wav_compr_zero;  // 0 data is high level for std ZX81 

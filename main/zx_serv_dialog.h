@@ -29,7 +29,9 @@ bool zxdlg_respond_from_string(uint8_t* strg, uint8_t len);
 
 
 
+bool zxsrv_load_file(const char *filepath);
 
+char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name);
 
 
 

@@ -104,6 +104,8 @@ bool zxdlg_respond_from_string(uint8_t* strg, uint8_t len){
 }
 
 
+
+
 static bool zxsrv_respond_fileload(const char *filepath, int dummy){
     int rdbyte;
     uint16_t fpos=0;
@@ -128,6 +130,11 @@ static bool zxsrv_respond_fileload(const char *filepath, int dummy){
     // next - main menu
     clear_mrespond_entries();
     return true; // to send_zxf_image_compr();zxfimg_delete();
+}
+
+
+bool zxsrv_load_file(const char *filepath){
+    return  zxsrv_respond_fileload(filepath, 0);
 }
 
 // makes a number from two ascii hexa characters
@@ -536,3 +543,46 @@ static bool zxsrv_respond_filemenu(const char *dirpath, int offset){
     return true; // to send_zxf_image_compr();zxfimg_delete();
 }
 
+static char zxsrv_find_file_entrypath[ESP_VFS_PATH_MAX+17];
+
+char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
+    const char *dirpath="/spiffs/";
+
+    char* result=NULL;
+    struct dirent *entry;
+    DIR *dir = opendir(dirpath);
+    const size_t dirpath_len = strlen(dirpath);
+
+    ESP_LOGI(TAG, "FILESEACH : %s  ", dirpath);
+    /* Retrieve the base path of file storage to construct the full path */
+    strlcpy(zxsrv_find_file_entrypath, dirpath, sizeof(zxsrv_find_file_entrypath));
+
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
+        return 0;
+    }
+    dir = opendir(dirpath);
+
+    /* Iterate over all files / folders and fetch their names and sizes */
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR) continue;
+        strlcpy(zxsrv_find_file_entrypath + dirpath_len, entry->d_name, sizeof(zxsrv_find_file_entrypath) - dirpath_len);
+        uint8_t* inpname=tape_string_name;
+        char* filen=entry->d_name;
+        while(*filen){
+            if( (convert_ascii_to_zx_code(*filen)&0x3f) != (*inpname&0x3f) ) /* ignore inverse */ break;
+            /* match so far */
+            if(*inpname >= 64){
+                /* full match */
+                result=zxsrv_find_file_entrypath;
+                ESP_LOGI(TAG, "MATCH : %s  ", zxsrv_find_file_entrypath);
+                break;
+            }
+            ++inpname;
+            ++filen;
+        }
+        if(result) break;
+    }
+    closedir(dir);
+    return result; // to send_zxf_image_compr();zxfimg_delete();
+}
