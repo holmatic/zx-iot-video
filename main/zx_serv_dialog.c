@@ -563,6 +563,7 @@ char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
     }
     dir = opendir(dirpath);
 
+
     /* Iterate over all files / folders and fetch their names and sizes */
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_DIR) continue;
@@ -584,5 +585,8 @@ char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
         if(result) break;
     }
     closedir(dir);
+
+    if(!result && tape_string_name[0]==22) return zxsrv_find_file_from_zxname(&tape_string_name[1]);  // Minus sign may be used for TAPE selection on NU, check if we have a match w/o this
+    
     return result; // to send_zxf_image_compr();zxfimg_delete();
 }

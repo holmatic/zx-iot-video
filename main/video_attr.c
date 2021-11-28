@@ -403,6 +403,10 @@ uint8_t tape_string_name_len=0;
 uint8_t tape_string_name[CHAR_PER_LINE];
 
 
+#define ASCII2ZXCODE(a) (a+38-'A') /* ZX code of A is 38*/
+
+const uint8_t OCR_LOAD[]={ASCII2ZXCODE('L'),ASCII2ZXCODE('O'),ASCII2ZXCODE('A'),ASCII2ZXCODE('D'),0};
+
 static void ocr_report_char(uint8_t xpos, uint8_t ypos, uint8_t charcode){
   if(charcode==ocr_code[xpos]){
     if(ocr_score[xpos] <VBIT_MAXSCORE){
@@ -419,7 +423,6 @@ static void ocr_report_char(uint8_t xpos, uint8_t ypos, uint8_t charcode){
   }
 }
 
-#define ASCII2ZXCODE(a) (a+38-'A') /* ZX code of A is 38*/
 
 static void ocr_check_input(){
   uint8_t startpos;
@@ -430,15 +433,10 @@ static void ocr_check_input(){
     if(ocr_code[startpos]>64) continue; /* inverted, maybe cursor*/
     if(ocr_code[startpos]!=0) break; /* regular char */
   }
-  if(startpos>=CHAR_PER_LINE) return; /* was empty */
-  if(ocr_code[startpos]    ==ASCII2ZXCODE('L')){
-    if(startpos>=CHAR_PER_LINE-5) return; /* not enough space left in line */
+  if(startpos>=CHAR_PER_LINE-5) return; /* not enough space left in line for match */
+  if(0==memcmp(&ocr_code[startpos],OCR_LOAD,sizeof(OCR_LOAD)  )){
     /* LOAD "filename" */
-    if(ocr_code[++startpos]!=ASCII2ZXCODE('O')) return;
-    if(ocr_code[++startpos]!=ASCII2ZXCODE('A')) return;
-    if(ocr_code[++startpos]!=ASCII2ZXCODE('D')) return;
-    if(ocr_code[++startpos]!=0) return;
-    ++startpos;
+    startpos+=sizeof(OCR_LOAD);
     uint8_t num_qm=0;
     /* Count the quotation marks " (code 11) */
     for(uint8_t i=startpos;i<CHAR_PER_LINE;i++){
@@ -485,7 +483,7 @@ static void ocr_scan_screen()
         }else{
           /* upper part just empty, try lower */
           pattern=pix_mem8[ ( (24+6+y*8)*40 +4+x)^3 ];
-          if(pattern==0){
+          if(pattern==0 &&  pix_mem8[ ( (24+4+y*8)*40 +4+x)^3 ] == 0){ /* minus sign */
               ocr_report_char(x,y,0); /* assume it is all empty */
               continue;
           } else {
