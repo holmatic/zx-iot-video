@@ -71,7 +71,7 @@ static uint8_t preferred_bg=VIDATTR_HSYNC_MASK|VIDATTR_VSYNC_MASK|VIDATTR_BLACK;
 
 static bool inv_setting=false;
 static bool fancymode_setting=true;
-static char colour_setting='G';
+static char colour_setting=' ';
 static bool applied_invert=false;
 
 
@@ -217,6 +217,8 @@ void vidattr_get_mem(uint8_t** fg_mem, uint8_t** bg_mem){
   if(bg_mem) *bg_mem=attr_mem_bg;
 }
 
+static uint16_t nonvolatile_write_pending=0;
+
 /*  */
 void vidattr_set_c_mode(char newcolour){
   if(colour_setting!=newcolour){
@@ -253,10 +255,13 @@ void vidattr_set_c_mode(char newcolour){
     }
     applied_invert=inv_setting;
     fill_attr_mem();
+    nonvolatile_write_pending=1000; /* write after some time, not directly */
+    /*
     store_fg_colour_in_nv(preferred_fg);
     store_bg_colour_in_nv(preferred_bg);
     store_inv_colour_in_nv(inv_setting?1:0);
     store_fancy_colour_in_nv(fancymode_setting);
+    */
   }
 }
 
@@ -270,7 +275,8 @@ void vidattr_set_inv_mode(bool invert){
       applied_invert=inv_setting;
     fill_attr_mem();
   }
-  store_inv_colour_in_nv(inv_setting?1:0);
+  nonvolatile_write_pending=1000; /* write status after some time */
+  //store_inv_colour_in_nv(inv_setting?1:0);
 }
 
 
@@ -404,8 +410,12 @@ uint8_t tape_string_name[CHAR_PER_LINE];
 
 
 #define ASCII2ZXCODE(a) (a+38-'A') /* ZX code of A is 38*/
+#define ZXCODE2ASCII(c) (c-38+'A') /* ZX code of A is 38*/
 
 const uint8_t OCR_LOAD[]={ASCII2ZXCODE('L'),ASCII2ZXCODE('O'),ASCII2ZXCODE('A'),ASCII2ZXCODE('D'),0};
+const uint8_t OCR_COLOUR[]={ASCII2ZXCODE('R'),ASCII2ZXCODE('E'),ASCII2ZXCODE('M'),0, ASCII2ZXCODE('C'),14};
+
+
 
 static void ocr_report_char(uint8_t xpos, uint8_t ypos, uint8_t charcode){
   if(charcode==ocr_code[xpos]){
@@ -433,7 +443,7 @@ static void ocr_check_input(){
     if(ocr_code[startpos]>64) continue; /* inverted, maybe cursor*/
     if(ocr_code[startpos]!=0) break; /* regular char */
   }
-  if(startpos>=CHAR_PER_LINE-5) return; /* not enough space left in line for match */
+  if(startpos>=CHAR_PER_LINE-7) return; /* not enough space left in line for match */
   if(0==memcmp(&ocr_code[startpos],OCR_LOAD,sizeof(OCR_LOAD)  )){
     /* LOAD "filename" */
     startpos+=sizeof(OCR_LOAD);
@@ -455,6 +465,17 @@ static void ocr_check_input(){
       if(s>64) continue;
       tape_string_name[tape_string_name_len++]=s;
       ESP_LOGW(TAG, "OCR LOAD name %02x",s );        
+    }
+  } else if (0==memcmp(&ocr_code[startpos],OCR_COLOUR,sizeof(OCR_COLOUR)  )) {
+    /* Setting of colour and inverse mode via REM C:xy  */
+    startpos+=sizeof(OCR_COLOUR);
+    if(ocr_code[startpos]==0) startpos++;
+    ESP_LOGW(TAG, "OCR COLOUR %02x",ocr_code[startpos] );    
+    while(ocr_code[startpos]>=ASCII2ZXCODE('A') && ocr_code[startpos]<=ASCII2ZXCODE('W')) {
+      if(ocr_code[startpos]==ASCII2ZXCODE('I')) vidattr_set_inv_mode(true);
+      else if (ocr_code[startpos]==ASCII2ZXCODE('N'))  vidattr_set_inv_mode(false);
+      else vidattr_set_c_mode(ZXCODE2ASCII(ocr_code[startpos]) );
+      ++startpos;
     }
   }
 }
@@ -536,11 +557,11 @@ static void vid_attr_task(void*arg)
 
     while(1){
         frames++;
-        vTaskDelay(5 / portTICK_RATE_MS); 
+        vTaskDelay(10 / portTICK_RATE_MS); 
         if(fancymode_setting){
           create_fancy_colours();
         }
-        vTaskDelay(5 / portTICK_RATE_MS); 
+        vTaskDelay(10 / portTICK_RATE_MS); 
         if(frames&1){
           ocr_scan_screen(); /* will set ocr_code_changed to 1 for change */
           if(ocr_code_changed){
@@ -548,6 +569,16 @@ static void vid_attr_task(void*arg)
               ocr_check_input(); /* will set ocr_code_changed back to 0 */
           }
         }
+        /* see if we have nonvolatile memoy write pending */
+        if(nonvolatile_write_pending && nonvolatile_write_pending-- == 1){
+              ESP_LOGW(TAG, "Write COLOUR info to NV now"); 
+              if(preferred_fg!=get_fg_colour_from_nv()) store_fg_colour_in_nv(preferred_fg);
+              if(preferred_bg!=get_bg_colour_from_nv()) store_bg_colour_in_nv(preferred_bg);
+              if(inv_setting == (!get_inv_colour_from_nv()) ) store_inv_colour_in_nv(inv_setting?1:0);
+              if(fancymode_setting!=get_fancy_colour_from_nv()) store_fancy_colour_in_nv(fancymode_setting);
+        }
+
+
     }
 }
 
