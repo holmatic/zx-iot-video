@@ -20,6 +20,9 @@ void vid_user_scr_adj_event();
 
 bool vid_is_synced();
 
+// low-level function for data stream access
+uint32_t vid_get_next_data();
+
 /* number of top-header lines before actual standard-character screen starts*/
 extern uint32_t vid_get_vline_offset();
 

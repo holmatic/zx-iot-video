@@ -1,0 +1,428 @@
+0001   0000             ; SYSINFO81 
+0002   0000             ; 	GPL
+0003   0000             ; 	Oliver Lange
+0004   0000             ; 	Version 1.0.1
+0005   0000             
+0006   0000             ; Compile with "tasm -80 -b wspdrv.asm wspdrv.p" 
+0007   0000             
+0008   0000             
+0009   0000             ; driver for wespi
+0010   0000             ;
+0011   0000             
+0012   0000             
+0013   0000              
+0014   0000             #define db .byte ;  cross-assembler definitions 
+0015   0000             #define dw .word 
+0016   0000             #define ds .block 
+0017   0000             #define org .org 
+0018   0000             #define end .end 
+0019   0000             
+0020   0000             
+0021   0000             
+0022   0000             #define COM_ADDR  0EFh
+0023   0000             #define COM_DAT   06Fh
+0024   0000             
+0025   0000             #define ADDR_LED  020h
+0026   0000             #define ADDR_SELA 030h
+0027   0000             #define ADDR_SELB 038h
+0028   0000             #define A_RHR 00h
+0029   0000             #define A_THR 00h
+0030   0000             #define A_IER 01h
+0031   0000             #define A_FCR 02h
+0032   0000             #define A_ISR 02h
+0033   0000             #define A_LCR 03h
+0034   0000             #define A_MCR 04h
+0035   0000             #define A_LSR 05h
+0036   0000             #define A_MSR 06h
+0037   0000             #define A_SCPAD 07h
+0038   0000             
+0039   0000             #define ADDR_DISABLE 0
+0040   0000             #define UPDATE	01FCh	; LOAD/SAVE adress update subroutine in ROM
+0041   0000             
+0042   0000             ;;#define VERBOSE 1
+0043   0000              
+0044   4009             org     $4009 ; BASIC PROGRAMM
+0045   4009             ;= System variables ============================================ 
+0046   4009              
+0047   4009 00             db 0     	;VERSN 
+0048   400A 00 00          dw 0     	;E_PPC 
+0049   400C 73 41          dw dfile      ;D_FILE 
+0050   400E 74 41          dw dfile+1    ;DF_CC 
+0051   4010 8E 41          dw var   	;VARS 
+0052   4012 00 00          dw 0     	;DEST 
+0053   4014 8F 41          dw var+1      ;E_LINE 
+0054   4016 8E 41          dw last-1     ;c_ADD 
+0055   4018 00 00          dw 0     	;X_PTR 
+0056   401A 8F 41          dw last  	;STKBOT 
+0057   401C 8F 41          dw last  	;STKEND 
+0058   401E 00             db 0     	;BERG 
+0059   401F 5D 40          dw membot     ;MEM 
+0060   4021 00             db 0     ;not used 
+0061   4022 02             db 2     ;DF_SZ 
+0062   4023 01 00          dw 1     ;S_TOP 
+0063   4025 FF FF FF       db $FF,$FF,$FF     ;LAST_K 
+0064   4028 37             db 55    ;MARGIN 
+0065   4029 64 41          dw line10     ;NXTLIN   line10   dfile
+0066   402B 00 00          dw 0     ;OLDPPC 
+0067   402D 00             db 0     ;FLAGX 
+0068   402E 00 00          dw 0     ;STRLEN 
+0069   4030 8D 0C          dw $0C8D      ;T_ADDR 
+0070   4032 00 00          dw 0     ;SEED 
+0071   4034 FF FF          dw $FFFF      ;FRAMES 
+0072   4036 00 00          db 0,0   ;COORDS 
+0073   4038 BC             db $BC   ;PR_CC 
+0074   4039 21 18          db 33,24      ;S_POSN 
+0075   403B 40             db 01000000B  ;CDFLAG 
+0076   403C             
+0077   403C             
+0078   403C                ;ds 33    ;Print buffer --- now used for loader code, all loaded programs need to have the same !
+0079   403C             ; relocatible loader code
+0080   403C             PLOADER:
+0081   403C             lwt_start:
+0082   403C 0E FE           ld c,$fe   ; 7
+0083   403E 06 08           ld b,8  ; 7    for gap between start and bits
+0084   4040             
+0085   4040             lwt_stdly:                  ; 25 cycles=7.7us
+0086   4040 DB FE           in a,($FE)  ; 11
+0087   4042 17              rla         ; 4
+0088   4043 30 FB           jr nc,lwt_stdly ; 12 / 7  (D7=0 is low level, wait for high)
+0089   4045                 ; trigger is seen 4us too late in average, so wait 48-4 - 4 us now: 130 cy in-in
+0090   4045             lgapdly:
+0091   4045 10 FE           djnz lgapdly     ; 13*n-5 = 99 for 8
+0092   4047 06 08           ld b,8  ; 7
+0093   4049             lbloop:                 ;  need 104 for 32us
+0094   4049 ED 50           in d,(c)    ; 12
+0095   404B CB 12           rl d        ; 8
+0096   404D 17              rla         ; 4 (rr a is 8)
+0097   404E 16 04           ld d,4      ; 7
+0098   4050             lbdly:
+0099   4050 15              dec d          ; 4          b*16-5 = 59
+0100   4051 20 FD           jr nz,lbdly     ; 12 / 7
+0101   4053 10 F4           djnz lbloop     ; 13 / 8
+0102   4055 77              ld (hl),a   ; 7
+0103   4056             
+0104   4056 CD FC 01    	CALL UPDATE  ; will use DE, inc HL    77 clks
+0105   4059 18 E1           jr lwt_start     ; 12
+0106   405B             PLOADEND:
+0107   405B                ds PLOADER+33-PLOADEND    ; Remaining space of 33 byte print buffer, after 29 byte loader
+0108   405D             
+0109   405D             membot: 
+0110   405D                ds 30    ;Calculator�s memory area 
+0111   407B                ds 2     ;not used 
+0112   407D              
+0113   407D             ;= First BASIC line, asm code ================================== 
+0114   407D              
+0115   407D             line0: 
+0116   407D 00 00          db 0,0   ;line number 
+0117   407F E3 00          dw line10-$-2 ;line length 
+0118   4081 EA             db $ea   ; REM 
+0119   4082             
+0120   4082             
+0121   4082             #define ELINE	4014h  ; Systemvariable, die das Ende des abzuspeichernen BASIC-Programs anzeigt
+0122   4082             #define ELINEHI	4015h  ; Systemvariable, die das Ende des abzuspeichernen BASIC-Programs anzeigt
+0123   4082             
+0124   4082             #define SHOW	0207h  ; ROM-Routinen
+0125   4082             #define FAST	02E7h
+0126   4082             #define RCLS	0A2Ah
+0127   4082             #define GETKEY	02BBh
+0128   4082             
+0129   4082             
+0130   4082             #DEFINE RST_PRTCHAR RST 10H
+0131   4082             #DEFINE c_SPACE 0
+0132   4082             #DEFINE c_NEWLINE 76H
+0133   4082             #DEFINE c_0 1CH
+0134   4082             
+0135   4082             #DEFINE c_A 38
+0136   4082             #DEFINE c_B (c_A+1)
+0137   4082             #DEFINE c_C (c_A+2)
+0138   4082             #DEFINE c_D (c_A+3)
+0139   4082             #DEFINE c_E (c_A+4)
+0140   4082             #DEFINE c_F (c_A+5)
+0141   4082             #DEFINE c_G (c_A+6)
+0142   4082             #DEFINE c_H (c_A+7)
+0143   4082             #DEFINE c_I (c_A+8)
+0144   4082             #DEFINE c_J (c_A+9)
+0145   4082             #DEFINE c_K (c_J+1)
+0146   4082             #DEFINE c_L (c_J+2)
+0147   4082             #DEFINE c_M (c_J+3)
+0148   4082             #DEFINE c_N (c_J+4)
+0149   4082             #DEFINE c_O (c_J+5)
+0150   4082             #DEFINE c_P (c_J+6)
+0151   4082             #DEFINE c_Q (c_J+7)
+0152   4082             #DEFINE c_R (c_J+8)
+0153   4082             #DEFINE c_S (c_J+9)
+0154   4082             #DEFINE c_T (c_S+1)
+0155   4082             #DEFINE c_U (c_S+2)
+0156   4082             #DEFINE c_V (c_S+3)
+0157   4082             #DEFINE c_W (c_S+4)
+0158   4082             #DEFINE c_X (c_S+5)
+0159   4082             #DEFINE c_Y (c_S+6)
+0160   4082             #DEFINE c_Z (c_S+7)
+0161   4082             
+0162   4082             
+0163   4082             
+0164   4082             ;
+0165   4082             ;   === Main entry point ====
+0166   4082             ;
+0167   4082             
+0168   4082             BASIC_START:
+0169   4082             
+0170   4082 CD E7 02    	CALL FAST	; go to fast mode
+0171   4085                 ; send msg back
+0172   4085 CD 46 0F        CALL $0F46  ; what is this?
+0173   4088                 
+0174   4088 DB FE           IN      A,($FE)         ; signal to 0 pause    
+0175   408A 06 C8           LD B,200  ; 200=200ms Pause
+0176   408C C5          W1: push BC
+0177   408D 06 00           ld b,0
+0178   408F             W2:
+0179   408F 10 FE           djnz W2     ; 1 millisec (256*4)
+0180   4091 C1              pop BC
+0181   4092 10 F8           djnz W1
+0182   4094 1E 4B           LD E, 75    ; ID for ZX_SAVE_TAG_QSAVE_START
+0183   4096 CD 1F 03        call $031F  ; SAVE byte in E
+0184   4099             
+0185   4099 D3 FF           OUT     ($FF),A         ; signal 0/off just in case
+0186   409B             
+0187   409B 06 32           LD B,50  ; 200ms to go to QSAVE mode
+0188   409D C5          W3: push BC
+0189   409E 06 00           ld b,0
+0190   40A0             W4:
+0191   40A0 10 FE           djnz W4     ; 1 millisec (256*4)
+0192   40A2 C1              pop BC
+0193   40A3 10 F8           djnz W3
+0194   40A5             
+0195   40A5             bloop:
+0196   40A5 06 00           ld b,0
+0197   40A7             W5:
+0198   40A7 10 FE           djnz W5     ; 
+0199   40A9 21 B5 40        ld   hl, testdata
+0200   40AC 06 05           ld   b,5
+0201   40AE 0E 42           ld   c,$42 ; packet ID
+0202   40B0 CD BA 40        call SyncSendBytes
+0203   40B3 18 F0           jr   bloop
+0204   40B5             
+0205   40B5             
+0206   40B5             testdata:
+0207   40B5 55 AA FF 00     db $55, $AA, $FF, 0, $55
+0207   40B9 55 
+0208   40BA             
+0209   40BA             SyncSendBytes:
+0210   40BA                 ; we want all our pulses in sync with the HSYNC pulses to not interfere   
+0211   40BA AF              XOR A       ; make sure A' not at sync or display position to
+0212   40BB 08              EX AF,AF'   ; just cause short INT on MNI here:
+0213   40BC                             
+0214   40BC D3 FE           OUT ($FE),A  ; ENABLE NMI
+0215   40BE 76              HALT
+0216   40BF D3 FD           OUT ($FD),A  ; Disable NMI   from here, start first bit in 54us =174cy
+0217   40C1 DB FE           IN      A,($FE)         ; signal to 0 /on - syncout
+0218   40C3 C5              PUSH BC
+0219   40C4 06 07           LD   B,7
+0220   40C6 00              NOP
+0221   40C7 D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
+0222   40C9             waitnline:
+0223   40C9 10 FE           DJNZ waitnline          ; delay for next line 13 per loop ..
+0224   40CB C1              POP  BC            ;10
+0225   40CC             
+0226   40CC             
+0227   40CC                 ; Send packettype in C
+0228   40CC             
+0229   40CC CD 10 41        call SENDNIBBLE ;151, so we need 56 cycles between nibbles to get to 207 for one hsync line
+0230   40CF             
+0231   40CF 23              INC  HL         ; 6  ; DUMMY matching later dec
+0232   40D0 7E              LD   A,(HL)     ; 7 
+0233   40D1 7E              LD   A,(HL)     ; 7 
+0234   40D2 D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0235   40D4 7E              LD   A,(HL)     ; 7 
+0236   40D5 7E              LD   A,(HL)     ; 7 
+0237   40D6 7E              LD   A,(HL)     ; 7 
+0238   40D7 00              NOP
+0239   40D8             
+0240   40D8 CD 10 41        call SENDNIBBLE ;151
+0241   40DB             
+0242   40DB 2B              DEC  HL 
+0243   40DC 7E              LD   A,(HL)     ; 7 
+0244   40DD 7E              LD   A,(HL)     ; 7 
+0245   40DE D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
+0246   40E0 7E              LD   A,(HL)     ; 7 
+0247   40E1 7E              LD   A,(HL)     ; 7 
+0248   40E2 7E              LD   A,(HL)     ; 7 
+0249   40E3 48              LD C,B             ;4
+0250   40E4             
+0251   40E4                 ; Send length in B
+0252   40E4             
+0253   40E4 CD 10 41        call SENDNIBBLE ;151
+0254   40E7             
+0255   40E7 23              INC  HL         ; 6  ; DUMMY matching later dec
+0256   40E8 7E              LD   A,(HL)     ; 7 
+0257   40E9 7E              LD   A,(HL)     ; 7 
+0258   40EA D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0259   40EC 7E              LD   A,(HL)     ; 7 
+0260   40ED 7E              LD   A,(HL)     ; 7 
+0261   40EE 7E              LD   A,(HL)     ; 7 
+0262   40EF 00              NOP             ; 4
+0263   40F0             
+0264   40F0 CD 10 41        call SENDNIBBLE ;151
+0265   40F3             
+0266   40F3 2B              DEC  HL 
+0267   40F4 7E              LD   A,(HL)     ; 7 
+0268   40F5             byteloop:
+0269   40F5 7E              LD   A,(HL)     ; 7 
+0270   40F6 D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
+0271   40F8 7E              LD   A,(HL)     ; 7 
+0272   40F9 7E              LD   A,(HL)     ; 7 
+0273   40FA 4E              LD   C,(HL)     ; 7 
+0274   40FB 00              NOP
+0275   40FC CD 10 41        call SENDNIBBLE ;151
+0276   40FF 23              INC  HL         ; 6
+0277   4100 7E              LD   A,(HL)     ; 7 
+0278   4101 7E              LD   A,(HL)     ; 7 
+0279   4102 D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0280   4104 7E              LD   A,(HL)     ; 7 
+0281   4105 7E              LD   A,(HL)     ; 7 
+0282   4106 7E              LD   A,(HL)     ; 7 
+0283   4107 00              NOP
+0284   4108                                 ; 56
+0285   4108 CD 10 41        CALL SENDNIBBLE ;151
+0286   410B 10 E8           DJNZ byteloop   ; 13
+0287   410D D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0288   410F C9              ret
+0289   4110             
+0290   4110             WAITGAP:
+0291   4110             
+0292   4110             
+0293   4110             SENDNIBBLE: ;31 per bit, 134 incl RET 151 incl call
+0294   4110                 ; Four bits to send
+0295   4110                 ;# bit 1 start
+0296   4110 CB 01           RLC C       ; 8
+0297   4112 38 19           JR C, csendH1 ; 12/7
+0298   4114 D8              ret c        ; 11/5 dummy for symmetric timing
+0299   4115                 ;# bit 1 send 0
+0300   4115 DB FE           IN      A,($FE)         ; signal to 0 /on
+0301   4117             
+0302   4117                 ;# bit 2 start
+0303   4117 CB 01           RLC C       ; 8
+0304   4119 38 2A           JR C, csendH2 ; 12/7
+0305   411B D8              ret c        ; 11/5 dummy for symmetric timing
+0306   411C                 ;# bit 2 send 0
+0307   411C DB FE           IN      A,($FE)         ; signal to 0 /on
+0308   411E             
+0309   411E                 ;# bit 3 start
+0310   411E CB 01           RLC C       ; 8
+0311   4120 38 34           JR C, csendH3 ; 12/7
+0312   4122 D8              ret c        ; 11/5 dummy for symmetric timing
+0313   4123                 ;# bit 3 send 0
+0314   4123 DB FE           IN      A,($FE)         ; signal to 0 /on
+0315   4125             
+0316   4125                 ;# bit 4 start
+0317   4125 CB 01           RLC C       ; 8
+0318   4127 38 37           JR C, csendH4 ; 12/7
+0319   4129 D8              ret c        ; 11/5 dummy for symmetric timing
+0320   412A                 ;# bit 4 send 0
+0321   412A DB FE           IN      A,($FE)         ; signal to 0 /on
+0322   412C             
+0323   412C C9              ret
+0324   412D             
+0325   412D             
+0326   412D             csendH1:    ;# bit 1 send 1
+0327   412D D3 FF           OUT     ($FF),A         ; signal to 1 /off
+0328   412F             
+0329   412F                 ;# bit 2 start
+0330   412F CB 01           RLC C       ; 8
+0331   4131 38 12           JR C, csendH2 ; 12/7
+0332   4133 D8              ret c        ; 11/5 dummy for symmetric timing
+0333   4134                 ;# bit 2 send 0
+0334   4134 DB FE           IN      A,($FE)         ; signal to 0 /on
+0335   4136             
+0336   4136                 ;# bit 3 start
+0337   4136 CB 01           RLC C       ; 8
+0338   4138 38 1C           JR C, csendH3 ; 12/7
+0339   413A D8              ret c        ; 11/5 dummy for symmetric timing
+0340   413B                 ;# bit 3 send 0
+0341   413B DB FE           IN      A,($FE)         ; signal to 0 /on
+0342   413D             
+0343   413D                 ;# bit 4 start
+0344   413D CB 01           RLC C       ; 8
+0345   413F 38 1F           JR C, csendH4 ; 12/7
+0346   4141 D8              ret c        ; 11/5 dummy for symmetric timing
+0347   4142                 ;# bit 4 send 0
+0348   4142 DB FE           IN      A,($FE)         ; signal to 0 /on
+0349   4144 C9              ret
+0350   4145             
+0351   4145             csendH2:    ;# bit 2 send 1
+0352   4145 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+0353   4147             
+0354   4147                 ;# bit 3 start
+0355   4147 CB 01           RLC C       ; 8
+0356   4149 38 0B           JR C, csendH3 ; 12/7
+0357   414B D8              ret c        ; 11/5 dummy for symmetric timing
+0358   414C                 ;# bit 3 send 0
+0359   414C DB FE           IN      A,($FE)         ; signal to 0 /on
+0360   414E             
+0361   414E                 ;# bit 4 start
+0362   414E CB 01           RLC C       ; 8
+0363   4150 38 0E           JR C, csendH4 ; 12/7
+0364   4152 D8              ret c        ; 11/5 dummy for symmetric timing
+0365   4153                 ;# bit 4 send 0
+0366   4153 DB FE           IN      A,($FE)         ; signal to 0 /on
+0367   4155 C9              ret
+0368   4156             
+0369   4156             csendH3:    ;# bit 3 send 1
+0370   4156 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+0371   4158             
+0372   4158                 ;# bit 4 start
+0373   4158 CB 01           RLC C       ; 8
+0374   415A 38 04           JR C, csendH4 ; 12/7
+0375   415C D8              ret c        ; 11/5 dummy for symmetric timing
+0376   415D                 ;# bit 4 send 0
+0377   415D DB FE           IN      A,($FE)         ; signal to 0 /on
+0378   415F C9              ret
+0379   4160             
+0380   4160             csendH4:    ;# bit 4 send 1
+0381   4160 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+0382   4162 C9              ret
+0383   4163             
+0384   4163             
+0385   4163             
+0386   4163 76             db $76   ;N/L 
+0387   4164             
+0388   4164             line10:
+0389   4164 00 0A          db 0,10  ;line number 
+0390   4166 0B 00          dw dfile-$-2  ;line length 
+0391   4168 F5             db $f5   ;PRINT 
+0392   4169 D4             db $d4   ;USR 
+0393   416A C5             db $c5   ;VAL
+0394   416B 0B             db $0b   ;"
+0395   416C 1D             db $1d   ;1 
+0396   416D 22             db $22   ;6 
+0397   416E 21             db $21   ;5 
+0398   416F 1D             db $1d   ;1 
+0399   4170 20             db $20   ;4 
+0400   4171 0B             db $0b   ;"
+0401   4172 76             db $76   ;N/L 
+0402   4173             
+0403   4173             
+0404   4173                
+0405   4173             ;- Display file -------------------------------------------- 
+0406   4173              
+0407   4173             dfile: 
+0408   4173 76             db $76 
+0409   4174 3F 3D          db c_Z,c_X,
+0410   4176 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0410   417A 76 76 76 76 
+0411   417E 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0411   4182 76 76 76 76 
+0412   4186 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+0412   418A 76 76 76 76 
+0413   418E              
+0414   418E             ;- BASIC-Variables ---------------------------------------- 
+0415   418E              
+0416   418E             var: 
+0417   418E 80             db $80 
+0418   418F              
+0419   418F             ;- End of program area ---------------------------- 
+0420   418F             
+0421   418F             last: 
+0422   418F              
+0423   418F                end 
+tasm: Number of errors = 0

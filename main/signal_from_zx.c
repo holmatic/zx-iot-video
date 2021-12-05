@@ -9,6 +9,7 @@
 #include "driver/i2s.h"
 #include "driver/adc.h"
 #include "esp_adc_cal.h"
+#include "iis_videosig.h"
 #include "zx_server.h"
 #include "signal_from_zx.h"
 
@@ -62,6 +63,13 @@ typedef struct zxfile_rec_status_info
     uint16_t namelength;
 } zxfile_rec_status_t;
 
+/* forward declarations*/
+static void IRAM_ATTR samplefunc_normsave(uint32_t data);
+static void IRAM_ATTR samplefunc_qsave_start(uint32_t data);
+
+static void (*checksamplefunc)(uint32_t) = samplefunc_normsave;
+
+
 static zxfile_rec_status_t zxfile;    // some signal statistics
 
 
@@ -77,7 +85,9 @@ static void zxfile_bit(uint8_t bitval)
             ESP_LOGI(TAG,"File E_LINE %d - len %d+%d\n",zxfile.e_line,zxfile.e_line-16393,zxfile.namelength);
         }
 		zxsrv_send_msg_to_srv( ZXSG_FILE_DATA, zxfile.bytecount, zxfile.data);
-
+		if(zxfile.bytecount==0 && zxfile.data==ZX_SAVE_TAG_QSAVE_START) {
+			checksamplefunc=samplefunc_qsave_start;
+		}
         zxfile.bitcount=0;
         zxfile.bytecount++;
         // zx memory image is preceided by a name that end with the first inverse char (MSB set)
@@ -180,8 +190,9 @@ void sfzx_report_video_signal_status(bool vid_is_active){
 	data_vid_active=vid_is_active;
 } 
 
+
 /* every incoming 32-bit sample as long as vid_is_active=false */
-void IRAM_ATTR sfzx_checksample(uint32_t data)
+static void IRAM_ATTR samplefunc_normsave(uint32_t data)
 {
 	if (data==0) {
 		if(actual_logic_level){
@@ -214,6 +225,139 @@ void IRAM_ATTR sfzx_checksample(uint32_t data)
 	} 
 }
 
+static IRAM_ATTR void check_sample_func( void(*samplefunc)(uint32_t)  );
+
+
+static void IRAM_ATTR samplefunc_waitemptyline(uint32_t data);
+static void IRAM_ATTR samplefunc_waithsync(uint32_t data);
+
+
+static void IRAM_ATTR samplefunc_nop(uint32_t data)
+{
+
+}
+
+
+
+static void exit_qsave_failure(uint32_t diag_data)
+{
+	ESP_LOGW(TAG,"Exit_from qsave with failure %d\n",diag_data);	
+	for(uint32_t i=0; i<45; i++){
+		ESP_LOGI(TAG,"Next sample_Data 0x%08X",vid_get_next_data());	
+	}
+
+	// release
+	checksamplefunc=samplefunc_normsave;
+}
+
+static bool wait_sync()
+{
+	if(vid_get_next_data()==0) return false;	// missed the point
+	for(uint32_t i=0; i<USEC_TO_SAMPLES(20); i++ ){
+		if(vid_get_next_data()==0) return true;
+	}
+	return false;	// timeout
+}
+
+static void smp_delay(uint32_t samples)
+{
+	for(uint32_t i=0; i<samples; i++){
+		vid_get_next_data();
+	}
+}
+
+
+static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* errorflag)
+{
+	uint8_t d=0;
+	if(!wait_sync()) *errorflag=10;
+	uint32_t p1=triggerpos-1-USEC_TO_SAMPLES(4);
+	uint32_t p2=p1+USEC_TO_SAMPLES(9.58);
+	uint32_t p3=p1+USEC_TO_SAMPLES(9.58*2);
+	uint32_t p4=p1+USEC_TO_SAMPLES(9.58*3);
+	//ESP_LOGI(TAG,"Timing= %d %d %d %d",p1,p2,p3,p4);
+
+	smp_delay(p1);
+	if (vid_get_next_data()!=0) d|=8;
+	smp_delay(p2-p1-1);
+	if (vid_get_next_data()!=0) d|=4;
+	smp_delay(p3-p2-1);
+	if (vid_get_next_data()!=0) d|=2;
+	smp_delay(p4-p3-1);
+	if (vid_get_next_data()!=0) d|=1;
+	if (p4+1 < USEC_TO_SAMPLES(61) ) smp_delay( USEC_TO_SAMPLES(61) - p4 - 1);
+	return d;
+}
+
+static void samplefunc_qsave_start(uint32_t data)
+{
+	ESP_LOGI(TAG,"Hello from samplefunc_qsave_start\n");	
+	uint32_t errflag=0;
+	uint32_t qs_count=0;
+	uint32_t to_count=0;
+	uint32_t line_count=0;
+	uint32_t trigger_pos=0;
+	//checksamplefunc=samplefunc_normsave;
+	checksamplefunc=samplefunc_nop;	/* turn off to avoid recursion*/
+	
+	smp_delay(USEC_TO_SAMPLES(10000)); /* defay till sender is really in qsave mode */
+
+	// wait for some empty lines
+	to_count=0;
+	for(;;){
+		if(vid_get_next_data()==0){
+		 	qs_count=0;
+			if(++to_count > MILLISEC_TO_SAMPLES(250)) return exit_qsave_failure(to_count);
+		}else{
+			if(++qs_count > USEC_TO_SAMPLES(50)){
+				// found empty line
+				if(!wait_sync()) return exit_qsave_failure(1);
+				if(++line_count>5) break;
+			}
+		}
+	}
+	// we are at the start of a sync now! 
+	//wait for a trigger
+	to_count=0;
+	for(;;){
+		smp_delay(USEC_TO_SAMPLES(16)); //  Wait for trigger end
+		if (vid_get_next_data()==0) return exit_qsave_failure(200000+to_count);
+		for(uint32_t i=USEC_TO_SAMPLES(16)+1; i<USEC_TO_SAMPLES(32); i++){
+			if (vid_get_next_data()==0){
+				trigger_pos=i;
+				goto trigger_found;
+			}
+		}
+		if(++to_count > 15625) return exit_qsave_failure(3); // 1 second
+		smp_delay(USEC_TO_SAMPLES(24)); //  8 us left
+		if(!wait_sync()) return exit_qsave_failure(300);
+	}
+trigger_found:
+	ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
+	// we have a header, here we go
+	// Trigger to first samplepos is 60us, choose a bit less due to delay
+	smp_delay(USEC_TO_SAMPLES(56)-trigger_pos);	// end of line
+
+	uint8_t packettype= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
+	uint8_t size= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
+	ESP_LOGI(TAG,"QS Packet %x size %d\n",packettype,size);	
+	for(;;){
+		uint8_t data= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
+		ESP_LOGI(TAG,"QS Data %x\n",data);	
+		if(--size==0) break;
+	}
+	// release
+	checksamplefunc=samplefunc_normsave;
+}
+
+
+
+
+/* every incoming 32-bit sample as long as vid_is_active=false */
+void IRAM_ATTR sfzx_checksample(uint32_t data)
+{
+	(*checksamplefunc)(data);
+}
 
 
 /* called periodically at roughly millisec scale */

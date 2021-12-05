@@ -132,7 +132,7 @@ bool vid_is_synced(){
 	return video_synced_state;
 }
 
-static IRAM_ATTR uint32_t vid_get_next_data()
+IRAM_ATTR uint32_t vid_get_next_data()
 {
 	uint32_t *rd_pt= (uint32_t* ) i2s_read_buff;
 	uint32_t d;
@@ -527,7 +527,7 @@ static inline void vid_scan_line(uint32_t *line_acc_bits, uint32_t line,uint32_t
 	*/
 }
 
-static uint8_t pending_user_adj=0;
+static uint16_t pending_user_adj=0;
 
 static void vid_in_task(void*arg)
 {

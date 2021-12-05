@@ -172,14 +172,19 @@ static void zxsrv_task(void *arg)
                 if(evt.addr<FILFB_SIZE){
                     file_first_bytes[evt.addr]=(uint8_t) evt.data;
                     // extract file name
-                    if(evt.addr==0) file_name_len=0;
+                    if(evt.addr==0){
+                        file_name_len=0;
+                        if(evt.data==ZX_SAVE_TAG_STRING_RESPONSE){
+                            ESP_LOGI(TAG,"QSAVE Tag\n"); 
+                        }
+                    }
                     if(!file_name_len){
                         if( evt.data&0x80 ){
                             file_name_len=evt.addr+1;
                             // zxsrv_filename_received(); not only filename, could also be string input
                         } 
                     }
-                    if(file_first_bytes[0]==ZX_SAVE_TAG_MENU_RESPONSE+1 && evt.data==0x80){
+                    if(file_first_bytes[0]==ZX_SAVE_TAG_STRING_RESPONSE && evt.data==0x80){
                             // return string
                             ESP_LOGI(TAG,"STRING INPUT addr %d \n",evt.addr); 
                             for(int i=0;i<=evt.addr;i++){
@@ -227,7 +232,7 @@ static void zxsrv_task(void *arg)
                 if(file_name_len && evt.addr>=file_name_len){
                     zxfimg_set_img(evt.addr-file_name_len,evt.data);
                     if(evt.addr>file_name_len+30 && zxfimg_get_size()==1+evt.addr-file_name_len ){
-                        file_first_bytes[file_name_len-1] ^= 0x80; // convert all name to upper case                       
+                        file_first_bytes[file_name_len-1] ^= 0x80; // end marker for name                      
                         save_received_zxfimg();
                         file_name_len=0;
                         zxdlg_reset();

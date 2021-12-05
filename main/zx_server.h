@@ -52,7 +52,9 @@ typedef enum {
 
 
 #define ZX_SAVE_TAG_LOADER_RESPONSE 70	// Initial loader responds with this tag and the RAMTOP info
-#define ZX_SAVE_TAG_MENU_RESPONSE   73	// Initial loader responds with this tag and the RAMTOP info
+#define ZX_SAVE_TAG_MENU_RESPONSE   73	// Menu user input key
+#define ZX_SAVE_TAG_STRING_RESPONSE 74	// String input from menu dialog
+#define ZX_SAVE_TAG_QSAVE_START     75	// Fast transfer 
 
 
 
