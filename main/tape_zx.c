@@ -118,13 +118,14 @@ static taps_tx_packet_t txpacket;    // current transmission
 //	uint8_t *data;			/*!<  pointer to transmit data, must be valid until packet done, NULL if NA  */
 //	uint32_t datasize;		/*!<  size of data, must be 0 if *data is NULL  */
 //	uint32_t para;			/*!<  generic parameter, usage depends on packet_type_id   inversion level for qload  */ 
+//	uint16_t predelay_ms;	/*!<  inserted delay before sending the content */
 //} taps_tx_packet_t ;
 
 
 void stzx_setup_new_file(const taps_tx_packet_t* txp){
 	txpacket=*txp;
 	memset(&zxfile,0,sizeof(zxfile));
-	zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(100); // break btw files will be done at start, 100 okay
+	zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(txpacket.predelay_ms); // break btw files will be done at start, 100 okay
 	zxfile.overall_filesize=txpacket.namesize+txpacket.datasize;
 	zxfile.currsrc=txpacket.namesize ? txpacket.name : txpacket.data;
 	zxfile.file_tag=txpacket.packet_type_id;

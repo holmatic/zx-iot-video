@@ -84,6 +84,7 @@ static void send_zxf_loader_uncompressed(uint8_t* name_or_null){
     p.data=zxfimg_get_img();
     p.datasize=zxfimg_get_size();
     p.para=0;
+    p.predelay_ms=100;
     taps_tx_enqueue(&p, true);
     ESP_LOGI(TAG,"Name %d, data %d bytes \n",p.namesize,p.datasize);
 
@@ -100,8 +101,27 @@ static void send_zxf_image_compr(){
     p.data=zxfimg_get_img();
     p.datasize=zxfimg_get_size();
     p.para=get_zx_outlevel_inverted()?1:0;
+    p.predelay_ms=100;
     taps_tx_enqueue(&p, true);
 }
+
+
+
+
+static void send_direct_data_compr(const uint8_t* sdata, uint32_t siz){
+    taps_tx_packet_t p;
+    taps_tx_wait_all_done();
+    p.packet_type_id=TTX_DATA_ZX81_QLOAD;
+    p.name=NULL;
+    p.namesize=0;
+    p.data=sdata;
+    p.datasize=siz;
+    p.para=get_zx_outlevel_inverted()?1:0;
+    p.predelay_ms=1;
+    taps_tx_enqueue(&p, true);
+}
+
+
 
 static void zxsrv_filename_received(){
     char namebuf[FILFB_SIZE];
@@ -141,6 +161,10 @@ static void save_received_zxfimg(){
 #define EVT_TIMEOUT_MS 50
 #define COMPRLOAD_TIMEOUT_MS 2000  /* usually returns after 500ms*/
 
+static struct{
+    uint8_t active_tag;
+    uint16_t expected_size;
+} qsavestatus;
 
 static void zxsrv_task(void *arg)
 {
@@ -168,6 +192,20 @@ static void zxsrv_task(void *arg)
                 } else {
                     ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
                 }
+            }else if(evt.evt_type==ZXSG_QSAVE_TAG){
+                qsavestatus.active_tag=evt.data;
+                qsavestatus.expected_size=evt.addr;
+                ESP_LOGI(TAG,"ZXSG_QSAVE_TAG %d",qsavestatus.active_tag); 
+            }else if(evt.evt_type==ZXSG_QSAVE_DATA){
+                if(qsavestatus.active_tag==ZX_QSAVE_TAG_HANDSHAKE){
+                    // ZX will send RAMTOP as content
+                    if(evt.addr+1==qsavestatus.expected_size){
+                        const uint8_t res_signal[]={0xcc,0x33,0xcc,0x33};
+                        ESP_LOGI(TAG,"ZX_QSAVE_TAG_HANDSHAKE"); 
+                        send_direct_data_compr(res_signal,sizeof(res_signal));
+                        qsavestatus.active_tag=0;
+                    }
+                }
             }else if(evt.evt_type==ZXSG_FILE_DATA){
                 if(evt.addr<FILFB_SIZE){
                     file_first_bytes[evt.addr]=(uint8_t) evt.data;
@@ -175,7 +213,7 @@ static void zxsrv_task(void *arg)
                     if(evt.addr==0){
                         file_name_len=0;
                         if(evt.data==ZX_SAVE_TAG_STRING_RESPONSE){
-                            ESP_LOGI(TAG,"QSAVE Tag\n"); 
+                            ESP_LOGI(TAG,"QSAVE Tag"); 
                         }
                     }
                     if(!file_name_len){

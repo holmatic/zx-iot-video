@@ -169,7 +169,7 @@ BASIC_START:
 
 	CALL FAST	; go to fast mode
     ; send msg back
-    CALL $0F46  ; what is this?
+    ;CALL $0F46  ; what is this?
     
     IN      A,($FE)         ; signal to 0 pause    
     LD B,200  ; 200=200ms Pause
@@ -181,17 +181,21 @@ W2:
     djnz W1
     LD E, 75    ; ID for ZX_SAVE_TAG_QSAVE_START
     call $031F  ; SAVE byte in E
-
-    OUT     ($FF),A         ; signal 0/off just in case
-
-    LD B,20  ; 20ms to go to QSAVE mode
-W3: push BC
+    OUT     ($FF),A         ; ; signal to 1 / syncoff, send hsyncs
     ld b,0
 W4:
-    djnz W4     ; 1 millisec (256*4)
-    pop BC
-    djnz W3
+    djnz W4     ; 1 millisec (256*4) to go to QSAVE mode
+    call TRY_HANDSHAKE  ; result in A
+    LD   B,0    
+    LD  C,A
+    push BC
+   	CALL SHOW	; Bildschirm anzeigen
+    pop  BC
+    RET
 
+
+
+; INACTIVE:
 bloop:
     ld b,0
 W5:
@@ -199,14 +203,47 @@ W5:
     ld   hl, testdata
     ld   b,5
     ld   c,$42 ; packet ID
-    call SyncSendBytes
+    call SEND_PACKET
     jr   bloop
 
+
+TRY_HANDSHAKE:  ; See if WESPI responds, return 1 if so, 0 for timeout
+    ld   hl, 16388 ; RAMTOP
+    ld   b,2
+    ld   c,90 ; packet ID ZX_QSAVE_TAG_HANDSHAKE
+    call SEND_PACKET
+    ld   b,181  ; timeout, 500ms (inner loop 3.15ms)
+HS_LOOP1:
+    PUSH BC
+    LD   B,0
+HS_LOOP2:                  ; 35 cycles=10.7us, inner Loop 2.75 millisec
+    in a,($FE)  ; 11
+    rla         ; 4
+    jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
+    DJNZ HS_LOOP2 ;13
+    ; re-check here to not have a blind spot for outer loop
+    in a,($FE)  ; 11
+    rla         ; 4
+    jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
+    POP  BC
+    DJNZ HS_LOOP1
+    OUT     ($FF),A  ; signal to 1 / syncoff
+    XOR  A
+    RET
+
+HS_FOUND
+    POP  BC
+    OUT     ($FF),A  ; signal to 1 / syncoff
+    LD   A,1
+    RET
 
 testdata:
     db $55, $AA, $FF, 0, $55
 
-SyncSendBytes:
+SEND_PACKET: ; HL points to data, C holds type, B lenght (0=256bytes)
+    PUSH AF
+    PUSH BC
+
     ; we want all our pulses in sync with the HSYNC pulses to not interfere   
     XOR A       ; make sure A' not at sync or display position to
     EX AF,AF'   ; just cause short INT on MNI here:
@@ -217,7 +254,7 @@ SyncSendBytes:
     IN      A,($FE)         ; signal to 0 /on - syncout
     PUSH BC
     LD   B,7
-    NOP
+    NOP             ; timing adjust to have bits symmetrical in (black-shouldered) line
     OUT     ($FF),A ;11        ; signal to 1 / syncoff
 waitnline:
     DJNZ waitnline          ; delay for next line 13 per loop ..
@@ -285,9 +322,10 @@ byteloop:
     CALL SENDNIBBLE ;151
     DJNZ byteloop   ; 13
     OUT     ($FF),A ; 11        ; signal to 1 /off
-    ret
 
-WAITGAP:
+    POP  BC
+    POP  AF
+    ret
 
 
 SENDNIBBLE: ;31 per bit, 134 incl RET 151 incl call

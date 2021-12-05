@@ -39,8 +39,10 @@ typedef enum {
 
 	ZXSG_OCR_NAME,
 	ZXSG_OCR_DATA,
+    ZXSG_QSAVE_TAG,
 
     ZXSG_FILE_DATA = 400,
+    ZXSG_QSAVE_DATA,
 
 } zxserv_evt_type_t;
 
@@ -56,7 +58,7 @@ typedef enum {
 #define ZX_SAVE_TAG_STRING_RESPONSE 74	// String input from menu dialog
 #define ZX_SAVE_TAG_QSAVE_START     75	// Fast transfer 
 
-
+#define ZX_QSAVE_TAG_HANDSHAKE      90	// Wespi should respond with some dummy signal to see it is there
 
 
 typedef struct {

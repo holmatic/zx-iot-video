@@ -35,6 +35,7 @@ typedef struct taps_tx_packet_tag{
 	uint8_t *data;			/*!<  pointer to transmit data, must be valid until packet done, NULL if NA  */
 	uint32_t datasize;		/*!<  size of data, must be 0 if *data is NULL  */
 	uint32_t para;			/*!<  generic parameter, usage depends on packet_type_id   inversion level for qload  */ 
+	uint16_t predelay_ms;	/*!<  inserted delay before sending the content */
 } taps_tx_packet_t ;
 
 /* submit to send a file or message, optionally wait till done */

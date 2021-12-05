@@ -289,6 +289,11 @@ static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* err
 	return d;
 }
 
+static uint8_t samplefunc_qsave_sample_byte(uint32_t trigger_pos, uint32_t* errorflag){
+	return (samplefunc_qsave_sample_nibble(trigger_pos, errorflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, errorflag);
+}
+
+
 static void samplefunc_qsave_start(uint32_t data)
 {
 	ESP_LOGI(TAG,"Hello from samplefunc_qsave_start\n");	
@@ -300,7 +305,7 @@ static void samplefunc_qsave_start(uint32_t data)
 	//checksamplefunc=samplefunc_normsave;
 	checksamplefunc=samplefunc_nop;	/* turn off to avoid recursion*/
 	
-	smp_delay(USEC_TO_SAMPLES(10000)); /* defay till sender is really in qsave mode */
+	smp_delay(USEC_TO_SAMPLES(500)); /* delay till sender is really in qsave mode, sender has 1ms here */
 
 	// wait for some empty lines
 	to_count=0;
@@ -338,13 +343,17 @@ trigger_found:
 	// Trigger to first samplepos is 60us, choose a bit less due to delay
 	smp_delay(USEC_TO_SAMPLES(56)-trigger_pos);	// end of line
 
-	uint8_t packettype= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
-	uint8_t size= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
+	uint8_t packettype = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
+	uint8_t size = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
+	if(packettype<ZX_QSAVE_TAG_HANDSHAKE || packettype>ZX_QSAVE_TAG_HANDSHAKE+10)  return exit_qsave_failure(50000+packettype);
+	zxsrv_send_msg_to_srv( ZXSG_QSAVE_TAG, size, packettype);
+	uint16_t ix=0;
 	ESP_LOGI(TAG,"QS Packet %x size %d\n",packettype,size);	
 	for(;;){
-		uint8_t data= (samplefunc_qsave_sample_nibble(trigger_pos, &errflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, &errflag);
+		uint8_t data  = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
 		ESP_LOGI(TAG,"QS Data %x\n",data);	
-		if(--size==0) break;
+		zxsrv_send_msg_to_srv( ZXSG_QSAVE_DATA, ix++, data);
+		if(--size==0) break; // a 0 means 256, so wraparound is intended here
 	}
 	// release
 	checksamplefunc=samplefunc_normsave;
