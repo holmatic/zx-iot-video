@@ -64,6 +64,8 @@ static bool zxsrv_respond_fileload(const char *filepath, int dummy);
 static bool zxsrv_respond_inpstr(const char *question, int offset);
 static bool zxsrv_respond_wifiscan(const char *dirpath, int offset);
 static bool zxsrv_videooptions(const char *dirpath, int offset);
+static bool zxsrv_loaddriver(const char *dirpath, int offset);
+ 
 static bool zxsrv_system(const char *dirpath, int offset);
 static bool zxsrv_help(const char *dirpath, int offset);
 
@@ -241,6 +243,14 @@ static bool zxsrv_wifi_inp_pass(const char *wifi_name, int offset){
 }
 
 
+
+static bool zxsrv_loaddriver(const char *wifi_name, int offset){
+    zxfimg_create(ZXFI_DRIVER);
+    zxdlg_reset();  // no response expected
+    return true; // to send_zxf_image_compr();zxfimg_delete();
+}
+
+
 static bool zxsrv_help(const char *wifi_name, int offset){
 
     zxfimg_create(ZXFI_MENU_KEY);
@@ -300,6 +310,9 @@ static bool zxsrv_system(const char *wifi_name, int offset){
     sprintf(txt_buf,"[W] WIFI CONFIG");
     zxfimg_print_video(11,txt_buf);
 
+    sprintf(txt_buf,"[D] DRIVER (EXPERIMENTAL)");
+    zxfimg_print_video(13,txt_buf);
+
     sprintf(txt_buf,"MAC %s",wifi_get_MAC_addr());
     zxfimg_print_video(18,txt_buf);
 
@@ -309,6 +322,7 @@ static bool zxsrv_system(const char *wifi_name, int offset){
     clear_mrespond_entries();
     create_mrespond_entry(59, zxsrv_videooptions, "VIDEO", 0 ); // "V"
     create_mrespond_entry(60, zxsrv_respond_wifiscan, "WIFI", 0 ); // "W"
+    create_mrespond_entry(41, zxsrv_loaddriver, "DRV", 0 ); // "D"
     /* append default entry */
     create_mrespond_entry(0, zxsrv_respond_filemenu, "/spiffs/", 0 );
     return true; // to send_zxf_image_compr();zxfimg_delete();

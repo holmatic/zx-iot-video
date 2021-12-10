@@ -288,7 +288,7 @@ void ledmx_init(void)
 {
 
 
-    xTaskCreate(ledmx_task, "ledmx_task", 1024 * 3, NULL, 14, NULL);
+    xTaskCreate(ledmx_task, "ledmx_task", 1024 * 3, NULL, configMAX_PRIORITIES - 6, NULL);
 
 }
 

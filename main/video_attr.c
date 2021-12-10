@@ -587,7 +587,7 @@ static void vid_attr_task(void*arg)
 void video_attr_init()
 {
   vidattr_get_mem(0,0); // allocate attribute mem
-  xTaskCreate(vid_attr_task, "vid_attr_task", 1024 * 2, NULL, 2, NULL);
+  xTaskCreate(vid_attr_task, "vid_attr_task", 1024 * 2, NULL, configMAX_PRIORITIES - 7, NULL);
 }
 
 

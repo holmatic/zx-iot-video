@@ -530,7 +530,7 @@ void lcd_disp_init()
     if(fg_colour==BLACK) actual_colour=bg_colour;
     else actual_colour=fg_colour;
 
-    xTaskCreate(tftd_task, "SPI_Display", 1024 * 3, NULL, 9, NULL);
+    xTaskCreate(tftd_task, "SPI_Display", 1024 * 3, NULL, configMAX_PRIORITIES - 4, NULL);
 }
 
 static void tftd_task(void*arg)

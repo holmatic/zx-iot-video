@@ -32,7 +32,7 @@ static const char *TAG = "zx_file_img";
 
 #include "asm_code.c"
 
-static const uint8_t* base_img[ZXFI_NUM]={ldrfile,menufile,str_inp};
+static const uint8_t* base_img[ZXFI_NUM]={ldrfile,menufile,str_inp,driver};
 
 
 

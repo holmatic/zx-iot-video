@@ -132,6 +132,8 @@ bool vid_is_synced(){
 	return video_synced_state;
 }
 
+//uint8_t reload_diag=0;
+
 IRAM_ATTR uint32_t vid_get_next_data()
 {
 	uint32_t *rd_pt= (uint32_t* ) i2s_read_buff;
@@ -140,6 +142,7 @@ IRAM_ATTR uint32_t vid_get_next_data()
 	static uint32_t data_w_count=0;
 
 	while(data_w_pos>=data_w_count){
+//		reload_diag++;
 		size_t bytes_read=0;
 		data_w_pos=data_w_count=0;
 		//i2s_read(i2s_port_t i2s_num, void *dest, size_t size, size_t *bytes_read, TickType_t ticks_to_wait);
@@ -680,7 +683,7 @@ void vid_init()
     ledc_set_duty(ledc_channel.speed_mode, ledc_channel.channel, 750);
     ledc_update_duty(ledc_channel.speed_mode, ledc_channel.channel);
 
-    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, 19, NULL);
+    xTaskCreate(vid_in_task, "vid_in_task", 1024 * 3, NULL, configMAX_PRIORITIES - 2, NULL);
 
 
 	TimerHandle_t pwm_timer;

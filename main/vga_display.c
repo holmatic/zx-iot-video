@@ -514,7 +514,7 @@ static void vga_task(void*arg)
         vTaskDelay(1); // allow some startup and settling time (might help, not proven)
         frames++;
         if(frames%1024==10){
-          if(isr_time_us==0||isr_time_us>60) ESP_LOGI(TAG, "Note: VGA interrupt duration %d us (%d%%) !!",isr_time_us, isr_time_us/SCR_CHUNK_LINES*100/32 );        
+          if(isr_time_us==0||isr_time_us>68) ESP_LOGI(TAG, "Note: VGA interrupt duration %d us (%d%%) !!",isr_time_us, isr_time_us/SCR_CHUNK_LINES*100/32 );        
           //ESP_LOGI(TAG, "Avg - empty %d, dark %d, invalid %d",avg_empty_cnt,avg_dark_cnt,avg_invalid_cnt );        
           //ESP_LOGI(TAG, "Vmode dark %d, nochar %d",vmode_dark?1:0,vmode_nochars?1:0);        
         }

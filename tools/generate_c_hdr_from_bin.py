@@ -9,7 +9,7 @@ if __name__ == "__main__":
         r=os.system(f'''"C:\Program Files (x86)\Tasm32\Tasm.exe" -80 -b {preamb}main/asm/{filn}.asm {preamb}main/asm/{filn}.p''')
         if r: break
         f=open(f"{preamb}main/asm/{filn}.p",'rb').read()
-        hx=f"\nconst uint8_t {varn}[]="+"{"+",".join(["0x%02x"%v for v in f])+"};\n"
+        hx=f"\nconst uint8_t {varn}[]="+"{"+",".join([ ('\n   ' if i%32==0 else '')+"0x%02x"%v for i,v in enumerate(f)])+"\n};\n"
         #print( hx )
         print( r,len(f) )
         wf.write(hx)

@@ -171,6 +171,7 @@ static void zxsrv_task(void *arg)
     uint16_t watchdog_cnt=0;    
     zxserv_event_t evt;
     char* directload_filepath=NULL;
+    uint32_t diag_sum=0;
     ESP_LOGI(TAG,"sfzx_task START \n");
     /* different ULA flavors need different levels - TODO bring to NVS */
     while(true){
@@ -195,7 +196,8 @@ static void zxsrv_task(void *arg)
             }else if(evt.evt_type==ZXSG_QSAVE_TAG){
                 qsavestatus.active_tag=evt.data;
                 qsavestatus.expected_size=evt.addr;
-                ESP_LOGI(TAG,"ZXSG_QSAVE_TAG %d",qsavestatus.active_tag); 
+                if(qsavestatus.expected_size==0) qsavestatus.expected_size=256; /* 8 bit encoding on other side */
+                //ESP_LOGI(TAG,"ZXSG_QSAVE_TAG %d",qsavestatus.active_tag); 
             }else if(evt.evt_type==ZXSG_QSAVE_DATA){
                 if(qsavestatus.active_tag==ZX_QSAVE_TAG_HANDSHAKE){
                     // ZX will send RAMTOP as content
@@ -206,6 +208,14 @@ static void zxsrv_task(void *arg)
                         qsavestatus.active_tag=0;
                     }
                 }
+                else if(qsavestatus.active_tag==ZX_QSAVE_TAG_DATA){
+                    if( (evt.addr&0xff) ==0) diag_sum=0;
+                    diag_sum+=evt.data;
+                    if( (evt.addr&0xff)+1 == qsavestatus.expected_size){
+                        ESP_LOGI(TAG,"diag_sum at %d is %xh",evt.addr,diag_sum); 
+                    }
+                }
+
             }else if(evt.evt_type==ZXSG_FILE_DATA){
                 if(evt.addr<FILFB_SIZE){
                     file_first_bytes[evt.addr]=(uint8_t) evt.data;
@@ -308,8 +318,8 @@ static void zxsrv_task(void *arg)
 
 void zxsrv_init()
 {
-    msg_queue=xQueueCreate(50,sizeof( zxserv_event_t ) );
-    xTaskCreate(zxsrv_task, "zxsrv_task", 1024 * 4, NULL, 8, NULL);
+    msg_queue=xQueueCreate(300,sizeof( zxserv_event_t ) );
+    xTaskCreate(zxsrv_task, "zxsrv_task", 1024 * 4, NULL, configMAX_PRIORITIES - 5, NULL);
 }
 
 zxserv_evt_type_t current_status=ZXSG_INIT;

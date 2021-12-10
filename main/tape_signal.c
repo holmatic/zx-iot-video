@@ -60,7 +60,7 @@ void taps_init(bool listen_mode)
 	tx_cmd_queue=xQueueCreate(5, sizeof( taps_tx_packet_t ) );
 	done_msg_queue=xQueueCreate(5, sizeof( uint8_t ) );
 	tapio_init(NULL); /* TODO use listen_mode */
-	xTaskCreate(taps_task, "taps_task", 1024 * 3, NULL, 9, NULL);
+	xTaskCreate(taps_task, "taps_task", 1024 * 3, NULL, configMAX_PRIORITIES - 3, NULL);
 }
 
 static uint32_t outstanding_acks=0;

@@ -237,14 +237,35 @@ static void IRAM_ATTR samplefunc_nop(uint32_t data)
 
 }
 
+//extern uint8_t reload_diag;
+
+static	char sig_buf[4800];
+
+static void show_signal(){
+	for (uint32_t i=0;i<sizeof(sig_buf);i++){
+		uint32_t d=vid_get_next_data();
+		char c='x';
+		if(d==0) c='0';
+		else if (d==0xffffffff) c='1';
+		//if(reload_diag){
+		//	c=' ';
+		//	reload_diag=0;
+		//}
+		sig_buf[i]=c;
+	}
+	sig_buf[sizeof(sig_buf)-1]=0;
+	ESP_LOGI(TAG,"Signal");	
+	ESP_LOGI(TAG,"%s",sig_buf);	
+}
+
 
 
 static void exit_qsave_failure(uint32_t diag_data)
 {
 	ESP_LOGW(TAG,"Exit_from qsave with failure %d\n",diag_data);	
-	for(uint32_t i=0; i<45; i++){
-		ESP_LOGI(TAG,"Next sample_Data 0x%08X",vid_get_next_data());	
-	}
+	//for(uint32_t i=0; i<45; i++){
+	//	ESP_LOGI(TAG,"Next sample_Data 0x%08X",vid_get_next_data());	
+	//}
 
 	// release
 	checksamplefunc=samplefunc_normsave;
@@ -259,7 +280,22 @@ static bool wait_sync()
 	return false;	// timeout
 }
 
-static void smp_delay(uint32_t samples)
+// We culd use this to be more noise tolerant, but seems not to be needed:
+extern uint32_t __builtin_popcountl(uint32_t);
+// if(__builtin_popcountl( vid_get_next_data() ) < 5) return true;
+
+static bool wait_sync2()
+{
+	//if(vid_get_next_data()==0) return false;	// missed the point
+	for(uint32_t i=0; i<USEC_TO_SAMPLES(20); i++ ){
+		if(vid_get_next_data()==0) return true;
+	}
+	return false;	// timeout
+	ESP_LOGI(TAG,"TO2= %08x %08x %08x %08x",vid_get_next_data(),vid_get_next_data(),vid_get_next_data(),vid_get_next_data());	
+}
+
+
+static inline void smp_delay(uint32_t samples)
 {
 	for(uint32_t i=0; i<samples; i++){
 		vid_get_next_data();
@@ -267,11 +303,11 @@ static void smp_delay(uint32_t samples)
 }
 
 
-static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* errorflag)
+static uint8_t samplefunc_qsave_sample_nibble2(uint32_t triggerpos, uint32_t* errorflag)
 {
 	uint8_t d=0;
-	if(!wait_sync()) *errorflag=10;
-	uint32_t p1=triggerpos-1-USEC_TO_SAMPLES(4);
+	if(!wait_sync2()) *errorflag=10;
+	uint32_t p1=triggerpos-1-USEC_TO_SAMPLES(4)-1;
 	uint32_t p2=p1+USEC_TO_SAMPLES(9.58);
 	uint32_t p3=p1+USEC_TO_SAMPLES(9.58*2);
 	uint32_t p4=p1+USEC_TO_SAMPLES(9.58*3);
@@ -285,13 +321,55 @@ static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* err
 	if (vid_get_next_data()!=0) d|=2;
 	smp_delay(p4-p3-1);
 	if (vid_get_next_data()!=0) d|=1;
-	if (p4+1 < USEC_TO_SAMPLES(61) ) smp_delay( USEC_TO_SAMPLES(61) - p4 - 1);
+	
+	// towards end of line
+	uint32_t to=USEC_TO_SAMPLES(20);
+	//vid_get_next_data();
+	//	if(__builtin_popcountl( vid_get_next_data() ) <16) return true;
+
+	while ( vid_get_next_data()  == 0 ){
+		if(--to==0){
+			 *errorflag=20;
+			//show_signal();
+		}
+	}
+	//if (p4+1 < USEC_TO_SAMPLES(62) ) smp_delay( USEC_TO_SAMPLES(62) - p4 - 1);
 	return d;
 }
+
+
+
+static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* errorflag)
+{
+	uint8_t d=0;
+	if(!wait_sync2()) *errorflag=10;
+
+	smp_delay(triggerpos-3-1);
+	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=8;
+	smp_delay(5);
+	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=4;//if (vid_get_next_data()!=0) d|=4;
+	smp_delay(5);
+	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=2;
+	smp_delay(5);
+	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=1;
+	smp_delay(4+1);
+	if ( vid_get_next_data()  == 0 ){		// wait for high-level end of line
+		if ( vid_get_next_data()  == 0 ){
+			if ( vid_get_next_data()  == 0 ){
+				*errorflag=20;
+			}
+		}
+	}
+	return d;
+}
+
+
+
 
 static uint8_t samplefunc_qsave_sample_byte(uint32_t trigger_pos, uint32_t* errorflag){
 	return (samplefunc_qsave_sample_nibble(trigger_pos, errorflag)<<4) | samplefunc_qsave_sample_nibble(trigger_pos, errorflag);
 }
+
 
 
 static void samplefunc_qsave_start(uint32_t data)
@@ -299,63 +377,106 @@ static void samplefunc_qsave_start(uint32_t data)
 	ESP_LOGI(TAG,"Hello from samplefunc_qsave_start\n");	
 	uint32_t errflag=0;
 	uint32_t qs_count=0;
-	uint32_t to_count=0;
+	int32_t to_count=0;
 	uint32_t line_count=0;
 	uint32_t trigger_pos=0;
+	uint32_t packet_offset=0;
 	//checksamplefunc=samplefunc_normsave;
 	checksamplefunc=samplefunc_nop;	/* turn off to avoid recursion*/
 	
-	smp_delay(USEC_TO_SAMPLES(500)); /* delay till sender is really in qsave mode, sender has 1ms here */
+	smp_delay(USEC_TO_SAMPLES(500)); /* delay till sender is really in qsave mode, sender has 1ms delay here */
 
-	// wait for some empty lines
-	to_count=0;
+	to_count=MILLISEC_TO_SAMPLES(250); /* initial connect should be quite fast */
 	for(;;){
-		if(vid_get_next_data()==0){
-		 	qs_count=0;
-			if(++to_count > MILLISEC_TO_SAMPLES(250)) return exit_qsave_failure(to_count);
-		}else{
-			if(++qs_count > USEC_TO_SAMPLES(50)){
-				// found empty line
-				if(!wait_sync()) return exit_qsave_failure(1);
-				if(++line_count>5) break;
+	retry_header:
+		// wait for some empty lines
+		line_count=0;
+		for(;;){
+			if(vid_get_next_data()==0){
+				qs_count=0;
+				if( --to_count <= 0 ) return exit_qsave_failure(10000000+to_count);
+			}else{
+				if(++qs_count > USEC_TO_SAMPLES(50)){
+					// found candidate for empty line
+					if(!wait_sync()){
+						line_count=0;
+					}
+					if(++line_count>=5) break;
+				}
+				if(  --to_count <= 0 ) return exit_qsave_failure(20000000+to_count);
 			}
 		}
-	}
-	// we are at the start of a sync now! 
-	//wait for a trigger
-	to_count=0;
-	for(;;){
-		smp_delay(USEC_TO_SAMPLES(16)); //  Wait for trigger end
-		if (vid_get_next_data()==0) return exit_qsave_failure(200000+to_count);
-		for(uint32_t i=USEC_TO_SAMPLES(16)+1; i<USEC_TO_SAMPLES(32); i++){
-			if (vid_get_next_data()==0){
-				trigger_pos=i;
-				goto trigger_found;
+		// okay, we are at the start of a hsync now! 
+		// wait for a trigger signal in the line
+		for(;;){
+			smp_delay(USEC_TO_SAMPLES(16)); //  Wait for trigger end
+			if (vid_get_next_data()==0) goto retry_header; // not a proper trigger...
+			for(uint32_t i=USEC_TO_SAMPLES(16)+1; i<USEC_TO_SAMPLES(32); i++){
+				if (vid_get_next_data()==0){
+					trigger_pos=i;
+					goto trigger_found;
+				}
+			}
+			to_count-=USEC_TO_SAMPLES(64); // looking at video lines here
+			if(to_count <= 0) return exit_qsave_failure(40000000); // 1 second no trigger
+			smp_delay(USEC_TO_SAMPLES(24)); //  8 us left
+			if(!wait_sync()) return exit_qsave_failure(50000000);
+		}
+	trigger_found:
+		errflag=0;
+		//ESP_LOGI(TAG,"Thread %s",pcTaskGetTaskName( xTaskGetCurrentTaskHandle()) );
+//		ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
+		// we have a header, here we go
+		// Trigger to first samplepos is 60us, choose a bit less due to delay
+		smp_delay(USEC_TO_SAMPLES(50)-trigger_pos);	// end of line
+ if(0){ show_signal();  return exit_qsave_failure(1234); }
+		uint8_t packettype = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
+		if(errflag){
+			ESP_LOGI(TAG,"Err %d at header1",errflag);
+			errflag=0;	
+		}
+if(0){ show_signal();  return exit_qsave_failure(1234); }
+		uint8_t size8bit = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
+		if(errflag){
+			ESP_LOGI(TAG,"Err %d at header2",errflag);
+			errflag=0;	
+		}
+		ESP_LOGI(TAG,"QS Packet %d size %d",packettype,size8bit);	
+		if(packettype<ZX_QSAVE_TAG_HANDSHAKE || packettype>ZX_QSAVE_TAG_HANDSHAKE+10) return exit_qsave_failure(60000+packettype);
+		if(packettype==ZX_QSAVE_TAG_HANDSHAKE || packettype==ZX_QSAVE_TAG_SAVEPFILE || packettype==ZX_QSAVE_TAG_DATA || packettype==ZX_QSAVE_TAG_END_RQ){
+			zxsrv_send_msg_to_srv( ZXSG_QSAVE_TAG, size8bit, packettype);
+		}
+		if(packettype==ZX_QSAVE_TAG_SAVEPFILE) packet_offset=0;
+
+if(0&& packettype==ZX_QSAVE_TAG_DATA){ show_signal();  return exit_qsave_failure(1234); }
+		uint16_t ix=0;
+		for(;;){
+			uint8_t data  = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
+			//if(ix<4||size8bit==1) ESP_LOGI(TAG,"QS Data #%d: %xh",ix,data);	
+			if(errflag){
+				ESP_LOGI(TAG,"Err %d at #%d: %xh",errflag,ix,data);
+				errflag=0;	
+			}
+			//if(packettype==ZX_QSAVE_TAG_HANDSHAKE && ix<4)
+			zxsrv_send_msg_to_srv( ZXSG_QSAVE_DATA, packet_offset+ix, data);
+			ix++;
+			if(--size8bit==0){ // a 0 means 256, so wraparound is intended here
+				// if(packettype==ZX_QSAVE_TAG_SAVEPFILE){ show_signal();  return exit_qsave_failure(1234); }
+			 	break; 
 			}
 		}
-		if(++to_count > 15625) return exit_qsave_failure(3); // 1 second
-		smp_delay(USEC_TO_SAMPLES(24)); //  8 us left
-		if(!wait_sync()) return exit_qsave_failure(300);
-	}
-trigger_found:
-	ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
-	// we have a header, here we go
-	// Trigger to first samplepos is 60us, choose a bit less due to delay
-	smp_delay(USEC_TO_SAMPLES(56)-trigger_pos);	// end of line
+		if(packettype==ZX_QSAVE_TAG_DATA) packet_offset+=256;
+		
+		//if(packettype==ZX_QSAVE_TAG_HANDSHAKE) smp_delay(MILLISEC_TO_SAMPLES(10));  // peer will go to reading mode first, wait till this is at least started
 
-	uint8_t packettype = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
-	uint8_t size = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
-	if(packettype<ZX_QSAVE_TAG_HANDSHAKE || packettype>ZX_QSAVE_TAG_HANDSHAKE+10)  return exit_qsave_failure(50000+packettype);
-	zxsrv_send_msg_to_srv( ZXSG_QSAVE_TAG, size, packettype);
-	uint16_t ix=0;
-	ESP_LOGI(TAG,"QS Packet %x size %d\n",packettype,size);	
-	for(;;){
-		uint8_t data  = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
-		ESP_LOGI(TAG,"QS Data %x\n",data);	
-		zxsrv_send_msg_to_srv( ZXSG_QSAVE_DATA, ix++, data);
-		if(--size==0) break; // a 0 means 256, so wraparound is intended here
+		// release from this mode only after return function or timeout!
+		if(packettype==ZX_QSAVE_TAG_END_RQ || packettype==ZX_QSAVE_TAG_END_NOREPLY){
+			break;
+		} else {
+			to_count=MILLISEC_TO_SAMPLES(750); /* give a bit of tíme for a follow up command  (maybe more even after LOAD?) */
+		}
 	}
-	// release
+	ESP_LOGW(TAG,"Exit_from qsave regularly");
 	checksamplefunc=samplefunc_normsave;
 }
 
