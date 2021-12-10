@@ -263,8 +263,8 @@ TESTPATTERN:
     PUSH HL  ; orig pos of args (w/o prefix T)
     PUSH BC  ; orig lenght of args (w/o prefix T)
     ; Check if we have contact
-    LD   A, c_T
-    CALL PRINTA
+;    LD   A, c_T
+;    CALL PRINTA
     
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
     AND A
@@ -282,7 +282,8 @@ TESTPATTERN:
     LD   BC,0
 TESTBLOOP:
     PUSH BC
-    NOP         ; timing adjust
+    NOP         ; timing adjust 66/70
+    NOP         ; timing adjust 70/74 - 74 seems to be more reliable than 70!
     CALL QLD_GETBYTE    ; uses BC D, result in A
     POP  BC
     CP   C  ; incomming data in A is 0,1,2,3,4...255,0,1... as byte

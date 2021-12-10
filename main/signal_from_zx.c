@@ -434,7 +434,11 @@ static void samplefunc_qsave_start(uint32_t data)
 		// we have a header, here we go
 		// Trigger to first samplepos is 60us, choose a bit less due to delay
 		// trigger should be gone after 10-16µs, just to check...
-		smp_delay(USEC_TO_SAMPLES(20));	// end of line
+		if(vid_get_next_data()!=0 || vid_get_next_data()!=0 || vid_get_next_data()!=0  ){
+			ESP_LOGW(TAG,"Header too short");
+			continue; /* not correct, retry_header */
+		}
+		smp_delay(USEC_TO_SAMPLES(20)-3);	// end of line
 		if(vid_get_next_data()==0){
 			ESP_LOGW(TAG,"Header too long");
 			continue; /* not correct, retry_header */
@@ -457,7 +461,7 @@ if(0){ show_signal();  return exit_qsave_failure(1234); }
 		ESP_LOGI(TAG,"QS Packet %d size %d",packettype,size8bit);	
 		if(packettype<ZX_QSAVE_TAG_HANDSHAKE || packettype>ZX_QSAVE_TAG_HANDSHAKE+10){
 			ESP_LOGW(TAG,"Invalid QS Packet %d size %d",packettype,size8bit);	
-		 	if (packettype==0&&size8bit==0) 
+		 	if (packettype==0) 
 				continue;
 			else
 				return exit_qsave_failure(60000+packettype);
