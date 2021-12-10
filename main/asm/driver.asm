@@ -192,6 +192,8 @@ GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for
 ;	JP Z,RENAM1
 ;	CP 2Ah		; ist es ein E
 ;	JP Z,ERAS1
+	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
+	JP Z,TESTPATTERN
 	CP c_H		; Help
 	JP Z,HLP
 	CP 0Fh		; ist es ein ?
@@ -255,6 +257,46 @@ PRINTA:
     POP  HL
     RET
     
+
+TESTPATTERN:
+	; HL points to arg string, BC number of chars
+    PUSH HL  ; orig pos of args (w/o prefix T)
+    PUSH BC  ; orig lenght of args (w/o prefix T)
+    ; Check if we have contact
+    LD   A, c_T
+    CALL PRINTA
+    
+    CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
+    AND A
+    ; Send SAVE request
+    POP  BC
+    POP  HL ; recover name pointer/length
+    JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
+
+    ld   B,C ; length, assume <256
+    ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
+    call SEND_PACKET
+
+    ; now retrieve 1024 bytes and see how many are correct
+    ; gap between byte calls should be 77+12+7 - 17-10 = 69 clocks
+    LD   BC,0
+TESTBLOOP:
+    PUSH BC
+    NOP         ; timing adjust
+    CALL QLD_GETBYTE    ; uses BC D, result in A
+    POP  BC
+    CP   C  ; incomming data in A is 0,1,2,3,4...255,0,1... as byte
+    LD   A,0 ; not affect flags, test never reports errors to better automatize
+    RET  NZ ; report BC at point of first failure
+    INC  BC
+    LD   A,16 ; 4kbyte testsize
+    CP   B
+    JR   NZ, TESTBLOOP
+    XOR  A
+    RET ; BC WILL be at maximum now
+
+
+
 ERREXIT:
     LD   A,1
     LD   BC,0
@@ -287,8 +329,6 @@ SAVE1:
     ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
     call SEND_PACKET
 
-    LD   A, c_A
-    CALL PRINTA
 	LD DE,4009h		; Get length
 	LD HL,(ELINE)	
 	AND A		; clear carry
@@ -297,8 +337,6 @@ SAVE1:
 	LD C,L
 	EX DE,HL	; Now HL=Start, BC=length
 SVSENDFUL:
-    LD   A, c_P
-    CALL PRINTA
     XOR  A
     CP   B
     JR   Z, SVSENDLAST
@@ -312,8 +350,6 @@ SVSENDFUL:
     JR   SVSENDFUL
 
 SVSENDLAST:
-    LD   A, c_L
-    CALL PRINTA
     XOR  A
     CP   C
     JR   Z, SVSENDEND
@@ -322,8 +358,6 @@ SVSENDLAST:
     call SEND_PACKET
 
 SVSENDEND:
-    LD   A, c_V
-    CALL PRINTA
     CALL QS_FINAL_ACK   ; Z set for success
     JR   NZ, ERREXIT
     XOR  A
@@ -347,9 +381,10 @@ HLPTXT:
 ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
 ;	db "LOAD  ",22h,"LNAME.P",22h,0dh
 ;	db "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
-;	db "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
+	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "FOR SIGGI'S UFM :V/R/K",0dh
     db c_NEWLINE
@@ -369,6 +404,8 @@ EXITHLP:
     LD   BC,42
     XOR  A
     RET
+
+
 
 GO_QSAVE_MODE:
 	CALL FAST	; go to fast mode
@@ -418,8 +455,9 @@ HS_FOUND
     OUT     ($FF),A  ; signal to 1 / syncoff
     ; let the output recover with active signal after being low from input. takes about 1ms as seen in oscilloscope
     LD   B,0
-HS_FINALDELAY: ; 1.25ms here
-    NOP
+HS_FINALDELAY: ; 2ms here
+    LD   A,(HL)
+    LD   A,(HL)
     DJNZ HS_FINALDELAY
     POP  BC
     LD   A,1
@@ -435,9 +473,7 @@ QS_FINAL_ACK:  ; Get info is operation was sussessful (Z) or failed (NZ), USES B
     LD   C,99 ; packet ID ZX_QSAVE_TAG_END_RQ
     call SEND_PACKET
 
-    RET  ; for now, ignore reply till comm reliable
-
-    ; await reply, first byte is tag
+    ; await reply, first byte is tag, then result
     CALL QLD_GETBYTE
     CP   42 ; tag
     RET  NZ
@@ -708,10 +744,11 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_S   ; S
-   db c_A   ; H
-   db c_B   ; H
-   db c_C   ; H
+   db c_T   ; TTTT2 = QLOAD test
+   db c_T   ; SNNN = dummy save for testing
+   db c_T   ; 
+   db c_T   ; 
+   db c_0+2   ; 
    db $0b   ; "
    db $76   ;N/L 
    db $76   ;N/L 

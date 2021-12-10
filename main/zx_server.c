@@ -40,6 +40,7 @@ static uint8_t file_first_bytes[FILFB_SIZE]; // storage for analyzing the file n
 static uint8_t file_name_len=0; 
 
 
+#define ASCII2ZXCODE(a) (a+38-'A') /* ZX code of A is 38*/
 
 
 static bool get_zx_outlevel_inverted()
@@ -107,8 +108,8 @@ static void send_zxf_image_compr(){
 
 
 
-
-static void send_direct_data_compr(const uint8_t* sdata, uint32_t siz){
+#define OUTLEVEL_AUTO 2
+static void send_direct_data_compr(const uint8_t* sdata, uint32_t siz, uint8_t outlevel){
     taps_tx_packet_t p;
     taps_tx_wait_all_done();
     p.packet_type_id=TTX_DATA_ZX81_QLOAD;
@@ -116,7 +117,7 @@ static void send_direct_data_compr(const uint8_t* sdata, uint32_t siz){
     p.namesize=0;
     p.data=sdata;
     p.datasize=siz;
-    p.para=get_zx_outlevel_inverted()?1:0;
+    p.para =  outlevel==OUTLEVEL_AUTO ? ( get_zx_outlevel_inverted()?1:0 ) :  outlevel ;
     p.predelay_ms=1;
     taps_tx_enqueue(&p, true);
 }
@@ -129,14 +130,14 @@ static void zxsrv_filename_received(){
     ESP_LOGI(TAG,"SAVE file, name [%s]\n",namebuf);
 }
 
-static void save_received_zxfimg(){
+static bool save_received_zxfimg(bool as_p_file){
     FILE *fd = NULL;
     uint16_t i;
     const char *dirpath="/spiffs/";
     char entrypath[ESP_VFS_PATH_MAX+17];
     char namebuf[FILFB_SIZE];
     zx_string_to_ascii(file_first_bytes,file_name_len,namebuf);
-    if(NULL==strchr(namebuf,'.') ){ /* add extension if none provided */
+    if(as_p_file && NULL==strchr(namebuf,'.') ){ /* add extension if none provided */
         strlcpy(namebuf + strlen(namebuf), ".p", FILFB_SIZE - strlen(namebuf));
     }
     ESP_LOGI(TAG,"SAVE - file [%s]\n",namebuf);
@@ -145,7 +146,7 @@ static void save_received_zxfimg(){
     fd = fopen(entrypath, "wb");
     if (!fd) {
         ESP_LOGE(TAG, "Failed to write to file : %s", entrypath);
-        return;
+        return false;
     }
     for(i=0; i<zxfimg_get_size(); i++) {
         fputc( zxfimg_get_img()[i], fd );
@@ -153,6 +154,7 @@ static void save_received_zxfimg(){
     /* Close file after write complete */
     fclose(fd);
     ESP_LOGI(TAG,"SAVE - done\n");
+    return true;
 }
 
 
@@ -163,7 +165,7 @@ static void save_received_zxfimg(){
 
 static struct{
     uint8_t active_tag;
-    uint8_t active_operation;
+    uint8_t active_operation;   // the oerarching operation like saving a file etc. Also, this is reset to 0 then an error occurs 
     uint16_t expected_size;
 } qsavestatus;
 
@@ -199,14 +201,15 @@ static void zxsrv_task(void *arg)
                     ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
                 }
             }else if(evt.evt_type==ZXSG_QSAVE_TAG){
+                file_name_len=0;
                 qsavestatus.active_tag=evt.data;
                 qsavestatus.expected_size=evt.addr;
                 if(qsavestatus.expected_size==0) qsavestatus.expected_size=256; /* 8 bit encoding on other side */
                 //ESP_LOGI(TAG,"ZXSG_QSAVE_TAG %d",qsavestatus.active_tag); 
             }else if(evt.evt_type==ZXSG_QSAVE_EXIT){
-                ESP_LOGI(TAG,"ZXSG_QSAVE_EXIT"); 
+                ESP_LOGI(TAG,"ZXSG_QSAVE_EXIT %d",evt.data); 
                 /* send some handshake here just in case the peer waits for this, otherwise should not hurd. Anyway, if peer waits on this it is a failure */
-                send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err));
+                send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err),OUTLEVEL_AUTO);
                 qsavestatus.active_tag=0;
                 qsavestatus.active_operation=0;
             
@@ -216,27 +219,103 @@ static void zxsrv_task(void *arg)
                     if(evt.addr+1==qsavestatus.expected_size){
                         const uint8_t res_signal[]={0xcc,0x33,0xcc,0x33};
                         ESP_LOGI(TAG,"ZX_QSAVE_TAG_HANDSHAKE"); 
-                        send_direct_data_compr(res_signal,sizeof(res_signal));
+                        send_direct_data_compr(res_signal,sizeof(res_signal),OUTLEVEL_AUTO);
                         qsavestatus.active_tag=0;
                     }
                 }
                 else if(qsavestatus.active_tag==ZX_QSAVE_TAG_DATA){
                     if( (evt.addr&0xff) ==0) diag_sum=0;
                     diag_sum+=evt.data;
+                    if(qsavestatus.active_operation==ZX_QSAVE_TAG_SAVEPFILE){
+                        zxfimg_set_img(evt.addr,evt.data);
+                    }
                     if( (evt.addr&0xff)+1 == qsavestatus.expected_size){
                         ESP_LOGI(TAG,"diag_sum at %d is %xh",evt.addr,diag_sum); 
                     }
                 }
                 else if(qsavestatus.active_tag==ZX_QSAVE_TAG_SAVEPFILE){
-                    qsavestatus.active_operation=qsavestatus.active_tag;    // saving a file is an operation
+                    qsavestatus.active_operation=qsavestatus.active_tag;    // saving a file is a longer operation
+                    zxfimg_delete();
                     // store name here
-                    if(evt.addr<FILFB_SIZE) file_first_bytes[evt.addr]=(uint8_t) evt.data;
-                    if( (evt.addr&0xff)+1 == qsavestatus.expected_size) file_first_bytes[evt.addr]|=0x80; // END mark (TODO check about comma, space, etc)
+                    if(evt.addr<FILFB_SIZE){
+                        file_first_bytes[evt.addr]=(uint8_t) evt.data;
+                        if( (evt.addr&0xff)+1 == qsavestatus.expected_size){    // end of name
+                            file_name_len=qsavestatus.expected_size;
+                            while (file_name_len>1 && file_first_bytes[file_name_len-1]==0) file_name_len--; // remove trailing whitespace
+                            // (TODO maybe check about comma, space, etc for bin file, then set as_p_file accordingly)
+                            file_first_bytes[file_name_len-1] &= 0x7f; // remove end marker from name                      
+                        }
+                    }
+                }
+                else if(qsavestatus.active_tag==ZX_QSAVE_TAG_LOADPFILE){
+                    zxfimg_delete();
+                    // store name here
+                    if(evt.addr<FILFB_SIZE){
+                        file_first_bytes[evt.addr]=(uint8_t) evt.data;
+                        if( (evt.addr&0xff)+1 == qsavestatus.expected_size) {    // end of name field
+                            file_name_len=qsavestatus.expected_size;
+                            while (file_name_len>1 && file_first_bytes[file_name_len-1]==0) file_name_len--; // remove trailing whitespace
+                            // (TODO maybe check about comma, space, etc for bin file, then set as_p_file accordingly)
+                            // load file
+                            if(     file_name_len==4 && file_first_bytes[0] == ASCII2ZXCODE('T') 
+                                && file_first_bytes[1] == ASCII2ZXCODE('T') && file_first_bytes[2] == ASCII2ZXCODE('T')  )         {
+                                ESP_LOGI(TAG,"LOAD: REQUEST DUMMY IMAGE LTTTx with x=inversion level ");
+                                const size_t imgsz=4096; // about 1 sec
+                                uint8_t *f=malloc(imgsz);
+                                uint8_t outlevel=OUTLEVEL_AUTO;
+                                if     ( (file_first_bytes[3]&0x7f)  == 28) outlevel=0;
+                                else if( (file_first_bytes[3]&0x7f)  == 29) outlevel=1;
+                                for(size_t i=0; i< imgsz; i++){
+                                    f[i]=i&0x00ff;
+                                }
+                                send_direct_data_compr(f,imgsz,outlevel);
+                                free(f);
+                            } else {
+                                // normal load, send tag first, then data
+                                file_first_bytes[tape_string_name_len-1] |= 0x80; /* mark end */
+                                directload_filepath = zxsrv_find_file_from_zxname(file_first_bytes); /* see if we have a match */
+                                if(directload_filepath && zxsrv_load_file(directload_filepath) ){
+                                    ESP_LOGI(TAG,"LOAD: LOADING...");
+                                    send_direct_data_compr(qsave_result_ok,sizeof(qsave_result_ok),OUTLEVEL_AUTO); // all fine, data will follow
+                                    send_zxf_image_compr();
+                                }
+                                else{
+                                    ESP_LOGI(TAG,"LOAD: FILE NOT FOUND");
+                                    send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err),OUTLEVEL_AUTO); // something wrong, file not found
+                                }
+                                zxfimg_delete();
+                            }
+                            qsavestatus.active_tag=0;
+                        }
+                    }
                 }
                 else if(qsavestatus.active_tag==ZX_QSAVE_TAG_END_RQ){
                     ESP_LOGI(TAG,"ZX_QSAVE_TAG_END_RQ with arg %xh ",evt.data); 
                     // TODO might reply with longer stream here for testing
-                    send_direct_data_compr(qsave_result_ok,sizeof(qsave_result_ok));
+                    if(qsavestatus.active_operation==ZX_QSAVE_TAG_SAVEPFILE){
+                        // we have all data to SAVE
+                        if (file_name_len && zxfimg_get_size()){
+                            if(file_name_len==3 && file_first_bytes[0] == ASCII2ZXCODE('E') && file_first_bytes[1] == ASCII2ZXCODE('R') && file_first_bytes[2] == (ASCII2ZXCODE('R')|0x80) ) {
+                                ESP_LOGI(TAG,"SAVE: DIAG ERROR RESPOND WITH IMAGE OF SIZE %d bytes",zxfimg_get_size());
+                                qsavestatus.active_operation=0; // fake error
+                            }
+                            else if(file_name_len==3 && file_first_bytes[0] == ASCII2ZXCODE('N') && file_first_bytes[1] == ASCII2ZXCODE('N') && file_first_bytes[2] == (ASCII2ZXCODE('N')|0x80) ) {
+                                ESP_LOGI(TAG,"SAVE: DIAG DUMMY SAVING WITH IMAGE OF SIZE %d bytes",zxfimg_get_size());
+                            }
+                            else{
+                                ESP_LOGI(TAG,"SAVE IMAGE OF SIZE %d bytes",zxfimg_get_size());
+                                if( !save_received_zxfimg(/*as_p_file*/ true) )  qsavestatus.active_operation=0;
+                                zxfimg_delete();
+                            }
+                        }
+                        file_name_len=0;
+                        zxdlg_reset();
+                    }
+
+                    if(qsavestatus.active_operation)
+                        send_direct_data_compr(qsave_result_ok,sizeof(qsave_result_ok),OUTLEVEL_AUTO); // all fine
+                    else
+                        send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err),OUTLEVEL_AUTO); // something wrong
                     qsavestatus.active_tag=0;
                     qsavestatus.active_operation=0;
                 }
@@ -275,7 +354,7 @@ static void zxsrv_task(void *arg)
                             // send compressed second stage
                             if(directload_filepath){
                                 ESP_LOGI(TAG,"Response from %dk ZX, send (compressed) file directly %d\n",(evt.data-0x40)/4,watchdog_cnt );                        
-                                // TODO cold respond with out of memory if RAM does not match the file
+                                // TODO could respond with out of memory if RAM does not match the file
                                 if(zxsrv_load_file(directload_filepath)){
                                     send_zxf_image_compr();
                                     if (watchdog_cnt==1) watchdog_cnt=0; /* no watchdog here, may take too long */
@@ -306,7 +385,7 @@ static void zxsrv_task(void *arg)
                     zxfimg_set_img(evt.addr-file_name_len,evt.data);
                     if(evt.addr>file_name_len+30 && zxfimg_get_size()==1+evt.addr-file_name_len ){
                         file_first_bytes[file_name_len-1] ^= 0x80; // end marker for name                      
-                        save_received_zxfimg();
+                        save_received_zxfimg(/*as_p_file*/ true);
                         file_name_len=0;
                         zxdlg_reset();
                     }

@@ -154,7 +154,7 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 		if(zxfile.bitcount==0 && !zxfile.preamble_done){
 			zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(2*100); // maybe needed to not react too fast on menu
 			zxfile.preamble_done=1;
-			ESP_LOGW(TAG, "Start Qload file");
+			ESP_LOGI(TAG, "Start Qload file");
 		}
 	    while(ix<buffer_size) {
 			if(!zxfile.startbit_done && zxfile.remaining_wavsamples==0){
@@ -204,7 +204,7 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 					}
 				} else {
 					set_sample(samplebuf,ix++,  IDLE_LEVEL );
-					if(!end_f)	ESP_LOGW(TAG, "End Qload file");
+					if(!end_f)	ESP_LOGI(TAG, "End Qload file");
 					end_f=true;
 					break;
 				}

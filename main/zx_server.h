@@ -40,7 +40,7 @@ typedef enum {
 	ZXSG_OCR_NAME,
 	ZXSG_OCR_DATA,
     ZXSG_QSAVE_TAG,
-    ZXSG_QSAVE_EXIT,
+    ZXSG_QSAVE_EXIT,        /* data will be 0 for error, 1 for ok */
 
     ZXSG_FILE_DATA = 400,
     ZXSG_QSAVE_DATA,
@@ -61,6 +61,7 @@ typedef enum {
 
 #define ZX_QSAVE_TAG_HANDSHAKE      90	// Wespi should respond with some dummy signal to see it is there
 #define ZX_QSAVE_TAG_SAVEPFILE      91
+#define ZX_QSAVE_TAG_LOADPFILE      93
 #define ZX_QSAVE_TAG_DATA           95
 #define ZX_QSAVE_TAG_END_NOREPLY    98
 #define ZX_QSAVE_TAG_END_RQ         99

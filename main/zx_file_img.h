@@ -14,10 +14,10 @@ extern "C" {
 
 typedef enum {
 
-    ZXFI_LOADER     ,       /*!< initial loader */
-    ZXFI_MENU_KEY  ,        /*!< shows menu and responds on keypress */
-    ZXFI_STR_INP,           /*!< input string */
-    ZXFI_DRIVER,
+    ZXFI_LOADER     ,       /* initial loader */
+    ZXFI_MENU_KEY  ,        /* shows menu and responds on keypress */
+    ZXFI_STR_INP,           /* input string */
+    ZXFI_DRIVER,            /* downloadable driver for binary transfers etc */
     ZXFI_NUM
 } zxfimg_prog_t;
 
