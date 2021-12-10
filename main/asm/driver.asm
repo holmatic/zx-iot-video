@@ -323,9 +323,9 @@ SVSENDLAST:
 
 SVSENDEND:
     LD   A, c_V
-    ;CALL PRINTA
-    ;CALL QS_FINAL_ACK   ; Z set for success
-    ;JR   NZ, ERREXIT
+    CALL PRINTA
+    CALL QS_FINAL_ACK   ; Z set for success
+    JR   NZ, ERREXIT
     XOR  A
     LD   BC, 1
 	RET
@@ -410,13 +410,20 @@ HS_LOOP2:                  ; 35 cycles=10.7us, inner Loop 2.75 millisec
     POP  BC
     DJNZ HS_LOOP1
     OUT     ($FF),A  ; signal to 1 / syncoff
+    ; no signal found
     XOR  A
     RET
 
 HS_FOUND
-    POP  BC
     OUT     ($FF),A  ; signal to 1 / syncoff
+    ; let the output recover with active signal after being low from input. takes about 1ms as seen in oscilloscope
+    LD   B,0
+HS_FINALDELAY: ; 1.25ms here
+    NOP
+    DJNZ HS_FINALDELAY
+    POP  BC
     LD   A,1
+    AND  A
     RET
 
 QS_FINAL_SZ:
@@ -427,7 +434,10 @@ QS_FINAL_ACK:  ; Get info is operation was sussessful (Z) or failed (NZ), USES B
     ld   B,1
     LD   C,99 ; packet ID ZX_QSAVE_TAG_END_RQ
     call SEND_PACKET
-    ; await reply, first tag
+
+    RET  ; for now, ignore reply till comm reliable
+
+    ; await reply, first byte is tag
     CALL QLD_GETBYTE
     CP   42 ; tag
     RET  NZ

@@ -163,8 +163,13 @@ static void save_received_zxfimg(){
 
 static struct{
     uint8_t active_tag;
+    uint8_t active_operation;
     uint16_t expected_size;
 } qsavestatus;
+
+static const uint8_t qsave_result_ok[]={ZX_QSAVE_END_RES_TAG,1};
+static const uint8_t qsave_result_err[]={ZX_QSAVE_END_RES_TAG,0, ZX_QSAVE_END_RES_TAG,0}; /* some redundancy included by double length here*/
+
 
 static void zxsrv_task(void *arg)
 {
@@ -198,6 +203,13 @@ static void zxsrv_task(void *arg)
                 qsavestatus.expected_size=evt.addr;
                 if(qsavestatus.expected_size==0) qsavestatus.expected_size=256; /* 8 bit encoding on other side */
                 //ESP_LOGI(TAG,"ZXSG_QSAVE_TAG %d",qsavestatus.active_tag); 
+            }else if(evt.evt_type==ZXSG_QSAVE_EXIT){
+                ESP_LOGI(TAG,"ZXSG_QSAVE_EXIT"); 
+                /* send some handshake here just in case the peer waits for this, otherwise should not hurd. Anyway, if peer waits on this it is a failure */
+                send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err));
+                qsavestatus.active_tag=0;
+                qsavestatus.active_operation=0;
+            
             }else if(evt.evt_type==ZXSG_QSAVE_DATA){
                 if(qsavestatus.active_tag==ZX_QSAVE_TAG_HANDSHAKE){
                     // ZX will send RAMTOP as content
@@ -214,6 +226,19 @@ static void zxsrv_task(void *arg)
                     if( (evt.addr&0xff)+1 == qsavestatus.expected_size){
                         ESP_LOGI(TAG,"diag_sum at %d is %xh",evt.addr,diag_sum); 
                     }
+                }
+                else if(qsavestatus.active_tag==ZX_QSAVE_TAG_SAVEPFILE){
+                    qsavestatus.active_operation=qsavestatus.active_tag;    // saving a file is an operation
+                    // store name here
+                    if(evt.addr<FILFB_SIZE) file_first_bytes[evt.addr]=(uint8_t) evt.data;
+                    if( (evt.addr&0xff)+1 == qsavestatus.expected_size) file_first_bytes[evt.addr]|=0x80; // END mark (TODO check about comma, space, etc)
+                }
+                else if(qsavestatus.active_tag==ZX_QSAVE_TAG_END_RQ){
+                    ESP_LOGI(TAG,"ZX_QSAVE_TAG_END_RQ with arg %xh ",evt.data); 
+                    // TODO might reply with longer stream here for testing
+                    send_direct_data_compr(qsave_result_ok,sizeof(qsave_result_ok));
+                    qsavestatus.active_tag=0;
+                    qsavestatus.active_operation=0;
                 }
 
             }else if(evt.evt_type==ZXSG_FILE_DATA){

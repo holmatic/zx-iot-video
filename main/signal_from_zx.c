@@ -267,6 +267,7 @@ static void exit_qsave_failure(uint32_t diag_data)
 	//	ESP_LOGI(TAG,"Next sample_Data 0x%08X",vid_get_next_data());	
 	//}
 
+	zxsrv_send_msg_to_srv( ZXSG_QSAVE_EXIT, 0, 1);
 	// release
 	checksamplefunc=samplefunc_normsave;
 }
@@ -346,7 +347,7 @@ static uint8_t samplefunc_qsave_sample_nibble(uint32_t triggerpos, uint32_t* err
 
 	smp_delay(triggerpos-3-1);
 	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=8;
-	smp_delay(5);
+	smp_delay(5);  // is USEC_TO_SAMPLES(9.6)-1 as the delay between bits
 	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=4;//if (vid_get_next_data()!=0) d|=4;
 	smp_delay(5);
 	if (__builtin_popcountl( vid_get_next_data() ) > 16) d|=2;
@@ -424,22 +425,30 @@ static void samplefunc_qsave_start(uint32_t data)
 		}
 	trigger_found:
 		errflag=0;
-		//ESP_LOGI(TAG,"Thread %s",pcTaskGetTaskName( xTaskGetCurrentTaskHandle()) );
+		//  Just udes to check, we are in high-prio IIS-Video task here: ESP_LOGI(TAG,"Thread %s",pcTaskGetTaskName( xTaskGetCurrentTaskHandle()) );
 //		ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
 		// we have a header, here we go
 		// Trigger to first samplepos is 60us, choose a bit less due to delay
-		smp_delay(USEC_TO_SAMPLES(50)-trigger_pos);	// end of line
+		// trigger should be gone after 10-16µs, just to check...
+		smp_delay(USEC_TO_SAMPLES(20));	// end of line
+		if(vid_get_next_data()==0){
+			ESP_LOGI(TAG,"Header too long");
+			continue; /* not correct, retry_header */
+		}
+		if(USEC_TO_SAMPLES(30)-1>trigger_pos) smp_delay(USEC_TO_SAMPLES(30)-1-trigger_pos);	// end of line, at 50us after last trigger here
  if(0){ show_signal();  return exit_qsave_failure(1234); }
 		uint8_t packettype = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
 		if(errflag){
-			ESP_LOGI(TAG,"Err %d at header1",errflag);
+			ESP_LOGI(TAG,"Err %d at heade r1",errflag);
 			errflag=0;	
+			continue;
 		}
 if(0){ show_signal();  return exit_qsave_failure(1234); }
 		uint8_t size8bit = samplefunc_qsave_sample_byte(trigger_pos, &errflag);
 		if(errflag){
-			ESP_LOGI(TAG,"Err %d at header2",errflag);
+			ESP_LOGI(TAG,"Err %d at header 2",errflag);
 			errflag=0;	
+			continue;
 		}
 		ESP_LOGI(TAG,"QS Packet %d size %d",packettype,size8bit);	
 		if(packettype<ZX_QSAVE_TAG_HANDSHAKE || packettype>ZX_QSAVE_TAG_HANDSHAKE+10) return exit_qsave_failure(60000+packettype);
@@ -467,16 +476,18 @@ if(0&& packettype==ZX_QSAVE_TAG_DATA){ show_signal();  return exit_qsave_failure
 		}
 		if(packettype==ZX_QSAVE_TAG_DATA) packet_offset+=256;
 		
-		//if(packettype==ZX_QSAVE_TAG_HANDSHAKE) smp_delay(MILLISEC_TO_SAMPLES(10));  // peer will go to reading mode first, wait till this is at least started
+		if(packettype==ZX_QSAVE_TAG_HANDSHAKE) smp_delay(MILLISEC_TO_SAMPLES(10));  // peer will go to reading mode first, wait till this is at least started
 
 		// release from this mode only after return function or timeout!
 		if(packettype==ZX_QSAVE_TAG_END_RQ || packettype==ZX_QSAVE_TAG_END_NOREPLY){
+			smp_delay(MILLISEC_TO_SAMPLES(10)); /* delay and ignore some input as sender will switch to read mode etc anyway */
 			break;
 		} else {
-			to_count=MILLISEC_TO_SAMPLES(750); /* give a bit of tíme for a follow up command  (maybe more even after LOAD?) */
+			to_count=MILLISEC_TO_SAMPLES(750); /* more to come, give a bit of tíme for a follow up command  (maybe more even after LOAD?) */
 		}
 	}
 	ESP_LOGW(TAG,"Exit_from qsave regularly");
+	zxsrv_send_msg_to_srv( ZXSG_QSAVE_EXIT, 0, 0);
 	checksamplefunc=samplefunc_normsave;
 }
 
