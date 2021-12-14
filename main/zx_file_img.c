@@ -98,7 +98,7 @@ static uint8_t *memimg=0;
 
 static const uint16_t img_offs=16393;
 
-
+static uint16_t raw_fill_size=0;
 
 
 static uint16_t mem_rd16(uint16_t memaddr)
@@ -173,8 +173,10 @@ uint8_t *zxfimg_get_img() {
 
 void  zxfimg_set_img(uint16_t filepos,uint8_t data) {
 	if(!memimg) memimg=calloc(16384*2,1); /*extend size to 32K for binary operation */
-	if(memimg && filepos<16384*2)
+	if(memimg && filepos<16384*2){
 		memimg[filepos]=data;
+		if(filepos+1>raw_fill_size) raw_fill_size=filepos+1;
+	}
 	else
 		ESP_LOGE(TAG,"zxfimg_set_img alloc failed %d ",filepos); 
 }
@@ -186,7 +188,14 @@ uint16_t zxfimg_get_size() {
     return mem_img_size();
 }
 
+uint16_t zxfimg_get_raw_fill_size() {
+    return raw_fill_size;
+}
+
+
+
 void zxfimg_delete() {
 	if(memimg) free(memimg);
 	memimg=NULL;
+	raw_fill_size=0;
 }

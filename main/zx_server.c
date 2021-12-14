@@ -140,7 +140,8 @@ static bool save_received_zxfimg(bool as_p_file){
     if(as_p_file && NULL==strchr(namebuf,'.') ){ /* add extension if none provided */
         strlcpy(namebuf + strlen(namebuf), ".p", FILFB_SIZE - strlen(namebuf));
     }
-    ESP_LOGI(TAG,"SAVE - file [%s]\n",namebuf);
+    uint16_t len = as_p_file ? zxfimg_get_size() : zxfimg_get_raw_fill_size();
+    ESP_LOGI(TAG,"SAVE - file [%s] len %d\n",namebuf,len);
     strlcpy(entrypath, dirpath, sizeof(entrypath));
     strlcpy(entrypath + strlen(dirpath), namebuf, sizeof(entrypath) - strlen(dirpath));
     fd = fopen(entrypath, "wb");
@@ -148,7 +149,7 @@ static bool save_received_zxfimg(bool as_p_file){
         ESP_LOGE(TAG, "Failed to write to file : %s", entrypath);
         return false;
     }
-    for(i=0; i<zxfimg_get_size(); i++) {
+    for(i=0; i<len; i++) {
         fputc( zxfimg_get_img()[i], fd );
     } 
     /* Close file after write complete */
@@ -165,8 +166,8 @@ static bool save_received_zxfimg(bool as_p_file){
 
 static struct{
     uint8_t active_tag;
-    uint8_t active_operation;   // the oerarching operation like saving a file etc. Also, this is reset to 0 then an error occurs 
     uint16_t expected_size;
+    uint8_t active_operation;   // the oerarching operation like saving a file etc. Also, this is reset to 0 then an error occurs 
 } qsavestatus;
 
 static const uint8_t qsave_result_ok[]={ZX_QSAVE_END_RES_TAG,1};
@@ -201,7 +202,7 @@ static void zxsrv_task(void *arg)
                     ESP_LOGI(TAG,"Ignore loader request as loader is active \n"); 
                 }
             }else if(evt.evt_type==ZXSG_QSAVE_TAG){
-                file_name_len=0;
+
                 qsavestatus.active_tag=evt.data;
                 qsavestatus.expected_size=evt.addr;
                 if(qsavestatus.expected_size==0) qsavestatus.expected_size=256; /* 8 bit encoding on other side */
@@ -235,9 +236,12 @@ static void zxsrv_task(void *arg)
                 }
                 else if(qsavestatus.active_tag==ZX_QSAVE_TAG_SAVEPFILE){
                     qsavestatus.active_operation=qsavestatus.active_tag;    // saving a file is a longer operation
-                    zxfimg_delete();
                     // store name here
                     if(evt.addr<FILFB_SIZE){
+                        if(evt.addr==0){
+                            file_name_len=0;
+                            zxfimg_delete();
+                        }
                         file_first_bytes[evt.addr]=(uint8_t) evt.data;
                         if( (evt.addr&0xff)+1 == qsavestatus.expected_size){    // end of name
                             file_name_len=qsavestatus.expected_size;
@@ -271,17 +275,20 @@ static void zxsrv_task(void *arg)
                                 send_direct_data_compr(f,imgsz,outlevel);
                                 free(f);
                             } else {
+                                uint8_t reply[2]={0,0};
                                 // normal load, send tag first, then data
-                                file_first_bytes[tape_string_name_len-1] |= 0x80; /* mark end */
+                                file_first_bytes[file_name_len-1] |= 0x80; /* mark end */
                                 directload_filepath = zxsrv_find_file_from_zxname(file_first_bytes); /* see if we have a match */
                                 if(directload_filepath && zxsrv_load_file(directload_filepath) ){
                                     ESP_LOGI(TAG,"LOAD: LOADING...");
-                                    send_direct_data_compr(qsave_result_ok,sizeof(qsave_result_ok),OUTLEVEL_AUTO); // all fine, data will follow
-                                    send_zxf_image_compr();
+                                    reply[0]=zxfimg_get_size()&0x00ff;
+                                    reply[1]=(zxfimg_get_size()&0xff00)>>8;
+                                    send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // if we have data, all fine, data will follow
+                                    if(zxfimg_get_size()) send_zxf_image_compr();
                                 }
                                 else{
                                     ESP_LOGI(TAG,"LOAD: FILE NOT FOUND");
-                                    send_direct_data_compr(qsave_result_err,sizeof(qsave_result_err),OUTLEVEL_AUTO); // something wrong, file not found
+                                    send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // something wrong, file not found
                                 }
                                 zxfimg_delete();
                             }
@@ -290,7 +297,7 @@ static void zxsrv_task(void *arg)
                     }
                 }
                 else if(qsavestatus.active_tag==ZX_QSAVE_TAG_END_RQ){
-                    ESP_LOGI(TAG,"ZX_QSAVE_TAG_END_RQ with arg %xh ",evt.data); 
+                    ESP_LOGI(TAG,"ZX_QSAVE_TAG_END_RQ with arg %xh %d %d",evt.data,qsavestatus.active_operation,file_name_len); 
                     // TODO might reply with longer stream here for testing
                     if(qsavestatus.active_operation==ZX_QSAVE_TAG_SAVEPFILE){
                         // we have all data to SAVE
@@ -303,8 +310,17 @@ static void zxsrv_task(void *arg)
                                 ESP_LOGI(TAG,"SAVE: DIAG DUMMY SAVING WITH IMAGE OF SIZE %d bytes",zxfimg_get_size());
                             }
                             else{
-                                ESP_LOGI(TAG,"SAVE IMAGE OF SIZE %d bytes",zxfimg_get_size());
-                                if( !save_received_zxfimg(/*as_p_file*/ true) )  qsavestatus.active_operation=0;
+                                ESP_LOGI(TAG,"SAVE IMAGE");
+                                bool is_p_file=true;
+                                for(uint8_t i=1; i<file_name_len; i++){ /* comma after name indicating binary save?*/
+                                    if( file_first_bytes[i]==25 || file_first_bytes[i]==26 ){
+                                        is_p_file=false;
+                                        file_name_len=i; /* seperate name from args, name is 0 to i-1 */
+                                        break;
+                                    }
+                                }
+                                while(file_name_len>1 && file_first_bytes[file_name_len-1]==0) file_name_len--; /* remove whitespace */
+                                if( !save_received_zxfimg(/*as_p_file*/ is_p_file) )  qsavestatus.active_operation=0;
                                 zxfimg_delete();
                             }
                         }

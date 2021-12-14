@@ -180,8 +180,8 @@ GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for
 ;	JP Z,INFO1
 	CP c_S		; Save
 	JP Z,SAVE1
-;	CP c_L		; Load
-;	JP Z,LOAD1
+	CP c_L		; Load
+	JP Z,LOAD1
 ;	CP 29h		; ist es ein D;
 ;	JP Z,DIR1
 ;	CP 3Bh		; ist es ein V (UFM)
@@ -215,8 +215,6 @@ CHECKCOMMA:  ; Z is set when comma seperator found in string, NZ if not, uses A
     ; BC =0?
     XOR  A
     CP   C
-    JR   NZ,CHKK_CONT
-    CP   B
     JR   NZ,CHKK_CONT
     INC  A ; clear the Z flag
     RET     ; no match till end
@@ -258,6 +256,115 @@ PRINTA:
     RET
     
 
+LOAD1:
+	; HL points to arg string, BC number of chars
+    PUSH HL  ; orig pos of args (w/o prefix T)
+    PUSH BC  ; orig lenght of args (w/o prefix T)
+    ; Check if we have contact
+    LD   A, c_L
+    CALL PRINTA
+    
+    CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
+    AND A
+    ; Send LOAD request
+    POP  BC
+    POP  HL ; recover name pointer/length
+    JR   Z, LD_ERR ; NO CONTACT after TRY_HANDSHAKE
+
+    ld   B,C ; length, assume <256
+    ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
+    call SEND_PACKET
+    ; now retrieve length, 0 for error
+    CALL QLD_GETBYTE    ; uses BC D, result in A
+    LD   L,A
+    LD   B,5
+    LD   HL,$4009
+
+LOADELY:         ;    //60
+    DJNZ LOADELY
+
+    NOP
+    CALL QLD_GETBYTE    ; uses BC D, result in A
+    LD   H,A
+    OR   L
+    JR Z,LD_ERR
+    PUSH HL             ; length, will go to BC below
+LOADLOOP:
+    ; timing  - 74 between calls seems to be more reliable than 70!
+    CALL QLD_GETBYTE    ; uses BC D, result in A
+    LD   (HL),A
+    LD   (HL),A ; dummy for timing
+    INC  HL
+    POP  BC
+    DEC  BC
+    LD   A,C
+    OR   B
+    JR Z, LD_END
+    PUSH BC
+    JR  LOADLOOP
+LD_END:  
+    ; BC   0
+    XOR  A
+    RET ; BC WILL be at maximum now
+	RST 08h ; ALTERNATIVE
+	db 0FFh
+LD_ERR:
+    LD   A,1
+    RET ; BC WILL be at maximum now
+
+
+; parse a decimal number
+PARS_DEC_NUM:   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+	LD DE, 0
+    XOR  A
+    CP   C
+    JR Z,PARSFAIL
+
+PARS_LLOOP:     ; look for first number
+	LD A,(HL)
+	AND A
+	JR Z, PARS_LLOOP ; skip whitespace
+PARS_LLP2:
+	SUB 01ch	;"0"
+	JP C,PARSFAIL
+	CP 10
+	JP NC,PARSFAIL
+	; have a digit in A,
+	PUSH HL
+	; DE times ten
+	LD H,D      ; now in both HL and DE
+	LD L,E
+	ADD HL,HL
+	ADD HL,HL
+	ADD HL,HL ; times 8 so far
+	ADD HL,DE
+	ADD HL,DE
+	; Add new digit
+	LD D,0
+	LD E,A
+	ADD HL,DE
+	EX DE,HL    ; new value of DE
+	POP HL  ; pointer to argline back in HL
+	INC HL
+	DEC C
+    JR Z,PARSDONE
+	LD A,(HL)   ; load next char to see if end
+    CP   26 ;  ','
+    JR Z,PARSDONE
+    CP   14 ;  ';'
+    JR Z,PARSDONE
+    CP   11 ;  '"'
+    JR Z,PARSDONE
+	JR PARS_LLP2 
+PARSDONE:
+    XOR  A
+	RET
+PARSFAIL:
+    XOR  A
+    INC  A
+	RET
+
+
 TESTPATTERN:
 	; HL points to arg string, BC number of chars
     PUSH HL  ; orig pos of args (w/o prefix T)
@@ -268,7 +375,7 @@ TESTPATTERN:
     
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
     AND A
-    ; Send SAVE request
+    ; Send LOAD request
     POP  BC
     POP  HL ; recover name pointer/length
     JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
@@ -307,29 +414,30 @@ SAVE1:
 	; HL points to arg string, BC number of chars
     PUSH HL  ; orig pos of args (w/o prefix S)
     PUSH BC  ; orig lenght of args (w/o prefix S)
-    CALL CHECKCOMMA
-    JR   Z, BINSAVE
 
-    ; Check if we have contact
-        
+
     LD   A, c_S
     CALL PRINTA
-    
+
+    ; Check if we have contact
+   
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
-    AND A
     ; Send SAVE request
     POP  BC
     POP  HL ; recover name pointer/length
+    ; evauate connect result
+    AND A
     JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
 
-    CALL SKIPEMPTY
-    XOR  A
-    CP   C
-    JR   Z, ERREXIT ; NO NAME
-    ld   B,C ; length, assume <256
-    ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
-    call SEND_PACKET
+    ; again store original argument string, will need it now and when sending name
+    PUSH HL
+    PUSH BC
 
+    ;  test if saving binary or regular basic
+    CALL CHECKCOMMA
+    JR   Z, BINSAVE
+
+    ; SAVE BASIC program if not BINSAVE, pre-calc addr,size into HL and BC
 	LD DE,4009h		; Get length
 	LD HL,(ELINE)	
 	AND A		; clear carry
@@ -337,6 +445,22 @@ SAVE1:
 	LD B,H
 	LD C,L
 	EX DE,HL	; Now HL=Start, BC=length
+
+SAVE_CONT: ;continue common path of BIN and BASIC save
+    EXX     ; store payload addr and length for now
+
+    POP  BC
+    POP  HL ; recover name pointer/length
+    CALL SKIPEMPTY 
+    XOR  A
+    CP   C
+    JR   Z, ERREXIT ; NO NAME
+    ld   B,C ; length, assume <256
+    ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
+    call SEND_PACKET
+    
+    EXX ; Recover, now HL=Start, BC=length
+	
 SVSENDFUL:
     XOR  A
     CP   B
@@ -366,9 +490,30 @@ SVSENDEND:
 	RET
 
 
+BINSAVE: ; HL points to the comma in arg string, now parse addr, length
+    INC  HL
+    DEC  C
+    CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+    JR NZ, BSERREXIT   ; parse error
+    PUSH DE ; store addr, from now on have to use BSERREXIT2 to stack-unwind here
+    INC  HL
+    DEC  C
+    CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+    JR NZ, BSERREXIT2   ; parse error
+    ; length in DE
+    ; Now put HL=Start, BC=length
+    LD   B,D
+    LD   C,E
+    POP  HL
+    JR SAVE_CONT
 
-BINSAVE: ; TODO PARSE ADDR, send header and go on to SVSENDFUL
-
+BSERREXIT2:
+    POP  DE
+BSERREXIT:
+    POP  BC
+    POP  HL ; recover name pointer/length
+    LD   A,1
+	RET
 
 
 HLPTXT:
@@ -380,13 +525,14 @@ HLPTXT:
 ;	db "MKDIR ",22h,"DMVERZ",22h,0dh
 ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
 ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
-;	db "LOAD  ",22h,"LNAME.P",22h,0dh
+	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
 ;	db "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
-	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
-	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11   ; "SAVE  ",22h,"SNAME.P",22h,0dh
-	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11   ;  c_H,   "HELP  ",22h,"H",22h,0dh
+	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "FOR SIGGI'S UFM :V/R/K",0dh
     db c_NEWLINE
 	db $ff
@@ -745,11 +891,19 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_T   ; TTTT2 = QLOAD test
+   db c_S   ; TTTT2 = QLOAD test
    db c_T   ; SNNN = dummy save for testing
+   db c_S   ; STST,1024,100 binsave
    db c_T   ; 
-   db c_T   ; 
+   db 26
+   db c_0+1   ; 
+   db c_0+0   ; 
    db c_0+2   ; 
+   db c_0+4   ; 
+   db 26
+   db c_0+1   ; 
+   db c_0+0   ; 
+   db c_0+0   ; 
    db $0b   ; "
    db $76   ;N/L 
    db $76   ;N/L 

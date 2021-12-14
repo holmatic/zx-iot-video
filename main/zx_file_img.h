@@ -30,6 +30,7 @@ void zxfimg_cpzx_video(uint8_t linenum, const uint8_t* zxstr, uint16_t len);
 void zxfimg_set_img(uint16_t filepos,uint8_t data);
 uint8_t* zxfimg_get_img();
 uint16_t zxfimg_get_size();
+uint16_t zxfimg_get_raw_fill_size();
 void zxfimg_delete();
 
 
