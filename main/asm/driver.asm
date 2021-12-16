@@ -448,17 +448,17 @@ SAVE1:
 
 SAVE_CONT: ;continue common path of BIN and BASIC save
     EXX     ; store payload addr and length for now
-
+	EX DE,HL	; HL' must be restored, save in DE'
     POP  BC
     POP  HL ; recover name pointer/length
     CALL SKIPEMPTY 
     XOR  A
     CP   C
-    JR   Z, ERREXIT ; NO NAME
+    JR   Z, ERREXIT3 ; NO NAME
     ld   B,C ; length, assume <256
     ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
     call SEND_PACKET
-    
+	EX DE,HL	; HL' must be restored, was saved in DE'
     EXX ; Recover, now HL=Start, BC=length
 	
 SVSENDFUL:
@@ -506,6 +506,12 @@ BINSAVE: ; HL points to the comma in arg string, now parse addr, length
     LD   C,E
     POP  HL
     JR SAVE_CONT
+
+ERREXIT3:
+	EX DE,HL	; HL' must be restored, saved in DE'
+    EXX ; Recover
+    LD   A,1
+	RET
 
 BSERREXIT2:
     POP  DE
