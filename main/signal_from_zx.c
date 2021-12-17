@@ -40,7 +40,7 @@ static void set_det_phase(zxserv_evt_type_t newphase)
 	if(newphase!=phase){
 		phase=newphase;
 		zxsrv_send_msg_to_srv( newphase, 0,0);
-		ESP_LOGI(TAG,"Detected %s \n", phasenames[newphase-ZXSG_INIT]  );
+		ESP_LOGD(TAG,"Detected %s \n", phasenames[newphase-ZXSG_INIT]  );
 	}
 }
 
@@ -244,7 +244,7 @@ static void IRAM_ATTR samplefunc_nop(uint32_t data)
 #define DIAGSIGNALLENGTH 4800
 static void show_signal(){
 	char *sig_buf=malloc(DIAGSIGNALLENGTH);
-	for (uint32_t i=0;i<sizeof(sig_buf);i++){
+	for (uint32_t i=0;i<DIAGSIGNALLENGTH;i++){
 		uint32_t d=vid_get_next_data();
 		char c='x';
 		if(d==0) c='0';
@@ -255,7 +255,7 @@ static void show_signal(){
 		//}
 		sig_buf[i]=c;
 	}
-	sig_buf[sizeof(sig_buf)-1]=0;
+	sig_buf[DIAGSIGNALLENGTH-1]=0;
 	ESP_LOGI(TAG,"Signal");	
 	ESP_LOGI(TAG,"%s",sig_buf);	
 	free(sig_buf);
@@ -269,6 +269,7 @@ static void exit_qsave_failure(uint32_t diag_data)
 	//for(uint32_t i=0; i<45; i++){
 	//	ESP_LOGI(TAG,"Next sample_Data 0x%08X",vid_get_next_data());	
 	//}
+	show_signal(); 
 
 	zxsrv_send_msg_to_srv( ZXSG_QSAVE_EXIT, 0, 0);
 	// release
@@ -429,13 +430,13 @@ static void samplefunc_qsave_start(uint32_t data)
 		}
 	trigger_found:
 		errflag=0;
-		//  Just udes to check, we are in high-prio IIS-Video task here: ESP_LOGI(TAG,"Thread %s",pcTaskGetTaskName( xTaskGetCurrentTaskHandle()) );
-//		ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
+		//		ESP_LOGI(TAG,"QS Trigger pos %d",trigger_pos);	
 		// we have a header, here we go
 		// Trigger to first samplepos is 60us, choose a bit less due to delay
 		// trigger should be gone after 10-16µs, just to check...
 		if(vid_get_next_data()!=0 || vid_get_next_data()!=0 || vid_get_next_data()!=0  ){
 			ESP_LOGW(TAG,"Header too short");
+
 			continue; /* not correct, retry_header */
 		}
 		smp_delay(USEC_TO_SAMPLES(20)-3);	// end of line
@@ -497,7 +498,7 @@ if(0&& packettype==ZX_QSAVE_TAG_DATA){ show_signal();  return exit_qsave_failure
 
 		// release from this mode only after return function or timeout!
 		if(packettype==ZX_QSAVE_TAG_END_RQ || packettype==ZX_QSAVE_TAG_END_NOREPLY || packettype==ZX_QSAVE_TAG_LOADPFILE){
-			smp_delay(MILLISEC_TO_SAMPLES(10)); /* delay and ignore some input as sender will switch to read mode etc anyway */
+			smp_delay(MILLISEC_TO_SAMPLES(5)); /* delay and ignore some input as sender will switch to read mode etc anyway */
 			break;
 		} else {
 			to_count=MILLISEC_TO_SAMPLES(750); /* more to come, give a bit of tíme for a follow up command  (maybe more even after LOAD?) */

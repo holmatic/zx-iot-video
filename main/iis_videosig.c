@@ -74,17 +74,20 @@ static void pwm_timer_callb( TimerHandle_t xTimer )
 	static int last_lvl=-1;
 	static int stepsize=50;
 	static int dutyval=500;
+	static int lvl_h_count=0;
+	static int lvl_l_count=0;
+
+
 	int lvl;
 	lvl=gpio_get_level(VID_PWMLEVEL_PIN);
 	if(last_lvl>=0 &&  lvl!=last_lvl ){
 		// level change detected
-		stepsize=1;
+		if(stepsize>1) stepsize/=2;
 		//ESP_LOGI(TAG,"Vid level PWM - toggle detected to lvl %d , duty %d ",lvl, dutyval);
 	}else{
-		if(stepsize<100)
+		if(stepsize<125)
 		{
-			if(stepsize>95)			ESP_LOGE(TAG,"Vid level PWM - FAILURE to regulate, stuck at level %d with dutyval %d ",lvl, dutyval);
-			stepsize+=1;
+			stepsize += 1+stepsize/2;
 		}
 	}
 	if(lvl){
@@ -92,12 +95,20 @@ static void pwm_timer_callb( TimerHandle_t xTimer )
 			dutyval-=stepsize;
 		else
 			dutyval=0;
+		lvl_h_count+=1;
+		if(lvl_l_count>9) ESP_LOGI(TAG,"---> pwm_timer_callb in was L for %d ",lvl_l_count);
+		lvl_l_count=0;	
 	}else {
 		if (dutyval<1000-stepsize)
 			dutyval+=stepsize;
 		else
 			dutyval=1000;
+		lvl_l_count+=1;
+		if(lvl_h_count>9) ESP_LOGI(TAG,"---> pwm_timer_callb in was H for %d ",lvl_h_count);
+		lvl_h_count=0;	
 	}
+
+	if( (lvl_h_count>100 && lvl_h_count<105) ||  (lvl_l_count>100 && lvl_l_count<105) )			ESP_LOGE(TAG,"Vid level PWM - FAILURE to regulate, stuck at level %d with dutyval %d ",lvl, dutyval);
 
 	ledc_set_duty(ledc_channel.speed_mode, ledc_channel.channel, dutyval);
 	ledc_update_duty(ledc_channel.speed_mode, ledc_channel.channel);
@@ -687,7 +698,7 @@ void vid_init()
 
 
 	TimerHandle_t pwm_timer;
-	pwm_timer=xTimerCreate("VidLvlPWM",100 / portTICK_RATE_MS,pdTRUE, ( void * ) 0,pwm_timer_callb);
+	pwm_timer=xTimerCreate("VidLvlPWM",17 / portTICK_RATE_MS,pdTRUE, ( void * ) 0,pwm_timer_callb);
 	xTimerStart( pwm_timer, 100 );
 
 	// feedbak pin to 

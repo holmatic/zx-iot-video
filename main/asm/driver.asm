@@ -270,32 +270,60 @@ LOAD1:
     POP  BC
     POP  HL ; recover name pointer/length
     JR   Z, LD_ERR ; NO CONTACT after TRY_HANDSHAKE
+    PUSH HL  ; and again store for binload
+    PUSH BC  ; 
 
     ld   B,C ; length, assume <256
     ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
     call SEND_PACKET
+
+    ; now retrieve key, must be 123
+    CALL QLD_GETBYTE    ; uses BC D, result in A
+    CP  123
+    JR NZ,LD_ERR2
+    LD   B,4
+    LD  A,(HL)  ; dummy for timing
+ 
+LOADELY1:         ;    //47 delay between the header bytes
+    DJNZ LOADELY1
+
     ; now retrieve length, 0 for error
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   L,A
     LD   B,5
-    LD   HL,$4009
 
-LOADELY:         ;    //60
-    DJNZ LOADELY
+LOADELY2:         ;    //60 delay between the length bytes
+    DJNZ LOADELY2
 
     NOP
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   H,A
     OR   L
-    JR Z,LD_ERR
-    PUSH HL             ; length, will go to BC below
+    JR Z,LD_ERR2
+    EX   DE,HL
+    ; Here we have DE= len
+    ; get addr
+    POP  BC
+    POP  HL ; recover name pointer/length
+    PUSH DE             ; length, will go to BC below
+    PUSH DE             ; length, again, for end result
+
+
+    ;  test if saving binary or regular basic
+    CALL CHECKCOMMA
+    JR   Z, BINLOAD
+
+    ; LOAD BASIC program if not BINLOAD, set addr
+	LD HL,4009h		; 
+    LD   E,1        ; mark as basic load
+
 LOADLOOP:
     ; timing  - 74 between calls seems to be more reliable than 70!
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   (HL),A
     LD   (HL),A ; dummy for timing
     INC  HL
-    POP  BC
+    POP  BC     ; get remaining length
     DEC  BC
     LD   A,C
     OR   B
@@ -303,14 +331,35 @@ LOADLOOP:
     PUSH BC
     JR  LOADLOOP
 LD_END:  
-    ; BC   0
+    POP  BC ; orig length
     XOR  A
-    RET ; BC WILL be at maximum now
-	RST 08h ; ALTERNATIVE
+    CP   E  ; 0 for binary
+    RET   Z ; normal return for binload with length in BC
+    ; end for BASIC loader
+    POP  DE ; dummy, ret addr
+	RST 08h ;
 	db 0FFh
+
+
+LD_ERR2:
+    POP  DE ; dummy
+    POP  DE ; dummy
 LD_ERR:
     LD   A,1
     RET ; BC WILL be at maximum now
+
+
+
+BINLOAD: ; HL points to the comma in arg string, now parse addr, length
+    INC  HL
+    DEC  C
+    CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+    JR NZ, LD_ERR2   ; parse error
+    ; addr in DE
+    EX   DE,HL
+    LD   E,0    ; mark as binary
+    JR LOADLOOP
+
 
 
 ; parse a decimal number
@@ -532,9 +581,10 @@ HLPTXT:
 ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
 ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
 	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
+	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 ;	db "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
-	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
 	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
@@ -597,9 +647,9 @@ HS_LOOP2:                  ; 35 cycles=10.7us, inner Loop 2.75 millisec
     in a,($FE)  ; 11
     rla         ; 4
     jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
+    OUT     ($FF),A  ; signal to 1 / syncoff in between to not let levels drift (not good for follow-up cmds?)
     POP  BC
     DJNZ HS_LOOP1
-    OUT     ($FF),A  ; signal to 1 / syncoff
     ; no signal found
     XOR  A
     RET
@@ -608,9 +658,11 @@ HS_FOUND
     OUT     ($FF),A  ; signal to 1 / syncoff
     ; let the output recover with active signal after being low from input. takes about 1ms as seen in oscilloscope
     LD   B,0
-HS_FINALDELAY: ; 2ms here
+HS_FINALDELAY: ; 3ms here before next cmd
     LD   A,(HL)
     LD   A,(HL)
+    LD   A,(HL)    
+    LD   A,(HL)    
     DJNZ HS_FINALDELAY
     POP  BC
     LD   A,1
@@ -897,10 +949,10 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_S   ; TTTT2 = QLOAD test
+   db c_L   ; TTTT2 = QLOAD test
    db c_T   ; SNNN = dummy save for testing
    db c_S   ; STST,1024,100 binsave
-   db c_T   ; 
+   db c_T   ; LTST,1024   binload
    db 26
    db c_0+1   ; 
    db c_0+0   ; 

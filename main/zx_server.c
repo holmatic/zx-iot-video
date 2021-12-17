@@ -118,7 +118,7 @@ static void send_direct_data_compr(const uint8_t* sdata, uint32_t siz, uint8_t o
     p.data=sdata;
     p.datasize=siz;
     p.para =  outlevel==OUTLEVEL_AUTO ? ( get_zx_outlevel_inverted()?1:0 ) :  outlevel ;
-    p.predelay_ms=1;
+    p.predelay_ms=10;
     taps_tx_enqueue(&p, true);
 }
 
@@ -275,22 +275,30 @@ static void zxsrv_task(void *arg)
                                 send_direct_data_compr(f,imgsz,outlevel);
                                 free(f);
                             } else {
-                                uint8_t reply[2]={0,0};
+                                uint8_t reply[3]={123,0,0};
                                 // normal load, send tag first, then data
+                                for(uint8_t i=1; i<file_name_len; i++){ /* comma after name indicating binary load? just ignore, ZX will handle the difference */
+                                    if( file_first_bytes[i]==25 || file_first_bytes[i]==26 ){
+                                        file_name_len=i; /* seperate name from args, name is 0 to i-1 */
+                                        break;
+                                    }
+                                }
+                                while(file_name_len>1 && file_first_bytes[file_name_len-1]==0) file_name_len--; /* remove whitespace */
                                 file_first_bytes[file_name_len-1] |= 0x80; /* mark end */
                                 directload_filepath = zxsrv_find_file_from_zxname(file_first_bytes); /* see if we have a match */
+                                zxfimg_delete();
                                 if(directload_filepath && zxsrv_load_file(directload_filepath) ){
-                                    ESP_LOGI(TAG,"LOAD: LOADING...");
-                                    reply[0]=zxfimg_get_size()&0x00ff;
-                                    reply[1]=(zxfimg_get_size()&0xff00)>>8;
+                                    reply[1]=zxfimg_get_raw_fill_size()&0x00ff;
+                                    reply[2]=(zxfimg_get_raw_fill_size()&0xff00)>>8;
+                                    ESP_LOGI(TAG,"LOAD: LOADING... %2x %2x ",reply[1],reply[2]);
                                     send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // if we have data, all fine, data will follow
-                                    if(zxfimg_get_size()) send_zxf_image_compr();
+                                    if(zxfimg_get_raw_fill_size())  send_direct_data_compr(zxfimg_get_img(), zxfimg_get_raw_fill_size(),OUTLEVEL_AUTO);
+                                    zxfimg_delete();
                                 }
                                 else{
                                     ESP_LOGI(TAG,"LOAD: FILE NOT FOUND");
                                     send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // something wrong, file not found
                                 }
-                                zxfimg_delete();
                             }
                             qsavestatus.active_tag=0;
                         }

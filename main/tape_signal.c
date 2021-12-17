@@ -35,7 +35,7 @@ static void taps_task(void*arg)
 		uint8_t *buf;
 		uint32_t siz;
 		bool end_of_file=false;
-		ESP_LOGI(TAG,"taps_task");
+		ESP_LOGD(TAG,"taps_task");
 		if(xQueuePeek(tx_cmd_queue, &file,1 )){	/*  peek just reads without removing */
 			stzx_setup_new_file(&file);
 			do{

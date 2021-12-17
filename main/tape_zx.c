@@ -152,7 +152,7 @@ bool stzx_fill_buf_from_file(uint8_t* samplebuf, size_t buffer_size, uint32_t *a
 
 	if(zxfile.file_tag==TTX_DATA_ZX81_QLOAD){
 		if(zxfile.bitcount==0 && !zxfile.preamble_done){
-			zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(2*100); // maybe needed to not react too fast on menu
+			//zxfile.remaining_wavsamples=MILLISEC_TO_BYTE_SAMPLES(2*100); // maybe needed to not react too fast on menu
 			zxfile.preamble_done=1;
 			ESP_LOGI(TAG, "Start Qload file");
 		}
