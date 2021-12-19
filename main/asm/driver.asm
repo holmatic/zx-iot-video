@@ -119,7 +119,7 @@ line0:
 ;
 ;   === Main entry point ====
 ;
-
+DRIVER_START:
 BASIC_START:
 	CALL NAME	; get command line arg
 	JR BASIC_CONT
@@ -146,6 +146,7 @@ EXITPRSLP:
 	RET
 
 BASIC_CONT:
+AA01:
 	CALL GENER_START ; A is 0 for ok, !=0 for error
 	AND A
 	JR Z,BAS_OK
@@ -174,6 +175,7 @@ GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for
 	LD A,(HL)   ; HL=start, BC=length
     INC  HL
     DEC  BC
+AA00:
     LD   DE,GENER_END
     PUSH DE     ; ret adddess
 ;	CP c_I		; Info
@@ -192,11 +194,16 @@ GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for
 ;	JP Z,RENAM1
 ;	CP 2Ah		; ist es ein E
 ;	JP Z,ERAS1
+	CP c_I		;  I
+AA02:
+	JP Z,INST_RELOC
 	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
 	JP Z,TESTPATTERN
 	CP c_H		; Help
+AA03:
 	JP Z,HLP
 	CP 0Fh		; ist es ein ?
+AA04:
 	JP Z,HLP
     ret 
 
@@ -208,6 +215,93 @@ GENER_END:
     POP  AF
 	RET
 	
+INST_RELOC:
+    ; address with new memory location follows. Cpoies the driver and corrects the absolute adresses accordingly
+    LD   A, c_I
+    CALL PRINTA
+    CALL PARS_DEC_NUM   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+    LD   A,1
+    RET  NZ
+    PUSH DE
+	CALL FAST	; go to fast mode so we can use index regs
+    POP  DE
+    PUSH IX     ; save IX till end
+    PUSH DE
+    POP  IX     ; new start addr in IX, will need it quite often
+    ; copy RAW driver
+    LD HL,DRIVER_START
+    LD BC,DRIVER_END-DRIVER_START
+    LDIR
+    ; correct abs addr occurrences, all in this table:
+    LD HL, RELOC_TABLE
+RLCLOOP:
+    LD   E,(HL)
+    INC  HL
+    LD   D,(HL)
+    INC  HL
+    LD   A,D
+    OR  E
+    JR   Z, ENDRLCCP    ; null end marker
+    PUSH HL ; next RELOC_TABLE pos
+    ; DE is position of the addr tag relative to start
+    PUSH IX
+    POP  HL
+    ADD  HL,DE
+    ; HL is the absolute label pos to modify
+    PUSH HL ; need it later to write
+    LD   E,(HL) 
+    INC  HL
+    LD   D,(HL)
+    LD   HL, - DRIVER_START
+    ADD  HL,DE
+    ; HL is relative addr
+    PUSH IX
+    POP  DE
+    ADD  HL,DE
+    EX   DE,HL
+    ; DE is new abs addr
+    POP  HL
+    LD   (HL),E
+    INC  HL
+    LD   (HL),D
+    POP HL ; restore RELOC_TABLE pos
+    JR RLCLOOP
+ENDRLCCP:
+    POP  IX
+    XOR  A
+    LD   BC,DRIVER_END-DRIVER_START
+    RET
+ 
+
+PRINTHEX:
+	PUSH AF
+	PUSH HL
+	PUSH BC
+	LD C,A		; SAVE
+	SRL A
+	SRL A
+	SRL A
+	SRL A
+	ADD A,1CH	; Offset to '0'
+	RST 10H
+	LD A,C
+	AND	0FH		; MASK
+	ADD A,1CH	; Offset to '0'
+	RST 10H
+	POP BC
+	POP HL
+	POP AF
+	RET
+
+
+RELOC_TABLE:
+ ;   dw 0
+    dw AA00+1-DRIVER_START
+    dw AA01+1-DRIVER_START
+    dw AA02+1-DRIVER_START
+    dw AA03+1-DRIVER_START
+    dw AA04+1-DRIVER_START
+    dw 0    ; final
 
 
 
@@ -222,7 +316,7 @@ CHKK_CONT:
     LD   A, (HL)
     CP   26     ; comma
     RET  z
-    CP   26     ; also check for semicolon
+    CP   25     ; also check for semicolon
     RET  z
     INC  HL
     DEC  BC
@@ -372,7 +466,7 @@ PARS_DEC_NUM:   ; HL points to char in arg line, C holds remaining ARG size, ret
 PARS_LLOOP:     ; look for first number
 	LD A,(HL)
 	AND A
-	JR Z, PARS_LLOOP ; skip whitespace
+	JR Z, PARS_SKIPWS ; skip whitespace
 PARS_LLP2:
 	SUB 01ch	;"0"
 	JP C,PARSFAIL
@@ -405,6 +499,12 @@ PARS_LLP2:
     CP   11 ;  '"'
     JR Z,PARSDONE
 	JR PARS_LLP2 
+PARS_SKIPWS:
+	INC HL
+	DEC C
+    JR Z,PARSFAIL
+	JR PARS_LLOOP 
+
 PARSDONE:
     XOR  A
 	RET
@@ -927,7 +1027,7 @@ csendH4:    ;# bit 4 send 1
     OUT     ($FF),A         ; signal to 1 /off
     ret
 
-
+DRIVER_END:
 
    db $76   ;N/L 
 
@@ -949,19 +1049,20 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_L   ; TTTT2 = QLOAD test
-   db c_T   ; SNNN = dummy save for testing
-   db c_S   ; STST,1024,100 binsave
-   db c_T   ; LTST,1024   binload
-   db 26
-   db c_0+1   ; 
-   db c_0+0   ; 
-   db c_0+2   ; 
-   db c_0+4   ; 
-   db 26
+   db c_I   ; TTTT2 = QLOAD test
+   ;db c_T   ; SNNN = dummy save for testing
+   ;db c_S   ; STST,1024,100 binsave
+   ;db c_T   ; LTST,1024   binload
+   db 0   ; 
    db c_0+1   ; 
    db c_0+0   ; 
    db c_0+0   ; 
+   db c_0+0   ; 
+   db c_0+0   ; 
+;   db 26
+;   db c_0+1   ; 
+;   db c_0+0   ; 
+;   db c_0+0   ; 
    db $0b   ; "
    db $76   ;N/L 
    db $76   ;N/L 
