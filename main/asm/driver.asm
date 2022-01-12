@@ -121,6 +121,7 @@ line0:
 ;
 DRIVER_START:
 BASIC_START:
+AA45:
 	CALL NAME	; get command line arg
 	JR BASIC_CONT
 	NOP
@@ -141,6 +142,7 @@ ENDPRSLP:
     JR   ENDPRSLP
 EXITPRSLP:
     POP  HL ; original pointer
+AA44:
 	CALL GENER_START
 	LD (UFM_ERRNO),A
 	RET
@@ -165,10 +167,10 @@ AA01:
 	;db 0FFh
 
 BAS_OK:
-	RET  ; TODO check if RET or better RST8 with -1
-;    XOR A		; sonst zurueck nach BASIC
-;	RST 08h
-;	db 0FFh
+	; RET  ; TODO check if RET or better RST8 with -1
+    XOR A		; sonst zurueck nach BASIC
+	RST 08h
+	db 0FFh
 	
 
 GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for okay, BC retval to basic
@@ -181,8 +183,10 @@ AA00:
 ;	CP c_I		; Info
 ;	JP Z,INFO1
 	CP c_S		; Save
+AA41:
 	JP Z,SAVE1
 	CP c_L		; Load
+AA42:
 	JP Z,LOAD1
 ;	CP 29h		; ist es ein D;
 ;	JP Z,DIR1
@@ -198,6 +202,7 @@ AA00:
 AA02:
 	JP Z,INST_RELOC
 	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
+AA43:
 	JP Z,TESTPATTERN
 	CP c_H		; Help
 AA03:
@@ -217,8 +222,7 @@ GENER_END:
 	
 INST_RELOC:
     ; address with new memory location follows. Cpoies the driver and corrects the absolute adresses accordingly
-    LD   A, c_I
-    CALL PRINTA
+AA09:
     CALL PARS_DEC_NUM   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
     LD   A,1
     RET  NZ
@@ -229,10 +233,12 @@ INST_RELOC:
     PUSH DE
     POP  IX     ; new start addr in IX, will need it quite often
     ; copy RAW driver
+AA06:
     LD HL,DRIVER_START
     LD BC,DRIVER_END-DRIVER_START
     LDIR
     ; correct abs addr occurrences, all in this table:
+AA07:
     LD HL, RELOC_TABLE
 RLCLOOP:
     LD   E,(HL)
@@ -252,12 +258,16 @@ RLCLOOP:
     LD   E,(HL) 
     INC  HL
     LD   D,(HL)
-    LD   HL, - DRIVER_START
-    ADD  HL,DE
+AA05:
+    LD   HL, DRIVER_START
+    EX   DE,HL
+	AND A		; clear carry
+	SBC HL,DE	; actual address minus old offset
+
     ; HL is relative addr
     PUSH IX
     POP  DE
-    ADD  HL,DE
+    ADD  HL,DE  ; add new offset
     EX   DE,HL
     ; DE is new abs addr
     POP  HL
@@ -301,6 +311,51 @@ RELOC_TABLE:
     dw AA02+1-DRIVER_START
     dw AA03+1-DRIVER_START
     dw AA04+1-DRIVER_START
+    dw AA05+1-DRIVER_START
+    dw AA06+1-DRIVER_START
+    dw AA07+1-DRIVER_START
+    dw AA08+1-DRIVER_START
+    dw AA09+1-DRIVER_START
+
+    dw AA10+1-DRIVER_START
+    dw AA11+1-DRIVER_START
+    dw AA12+1-DRIVER_START
+    dw AA13+1-DRIVER_START
+    dw AA14+1-DRIVER_START
+    dw AA15+1-DRIVER_START
+    dw AA16+1-DRIVER_START
+    dw AA17+1-DRIVER_START
+    dw AA18+1-DRIVER_START
+    dw AA19+1-DRIVER_START
+
+    dw AA20+1-DRIVER_START
+    dw AA21+1-DRIVER_START
+    dw AA22+1-DRIVER_START
+    dw AA23+1-DRIVER_START
+    dw AA24+1-DRIVER_START
+    dw AA25+1-DRIVER_START
+    dw AA26+1-DRIVER_START
+    dw AA27+1-DRIVER_START
+    dw AA28+1-DRIVER_START
+    dw AA29+1-DRIVER_START
+
+    dw AA30+1-DRIVER_START
+    dw AA31+1-DRIVER_START
+    dw AA32+1-DRIVER_START
+    dw AA33+1-DRIVER_START
+    dw AA34+1-DRIVER_START
+    dw AA35+1-DRIVER_START
+    dw AA36+1-DRIVER_START
+    dw AA37+1-DRIVER_START
+    dw AA38+1-DRIVER_START
+    dw AA39+1-DRIVER_START
+
+    dw AA40+1-DRIVER_START
+    dw AA41+1-DRIVER_START
+    dw AA42+1-DRIVER_START
+    dw AA43+1-DRIVER_START
+    dw AA44+1-DRIVER_START
+    dw AA45+1-DRIVER_START
     dw 0    ; final
 
 
@@ -355,9 +410,7 @@ LOAD1:
     PUSH HL  ; orig pos of args (w/o prefix T)
     PUSH BC  ; orig lenght of args (w/o prefix T)
     ; Check if we have contact
-    LD   A, c_L
-    CALL PRINTA
-    
+AA10:    
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
     AND A
     ; Send LOAD request
@@ -369,9 +422,11 @@ LOAD1:
 
     ld   B,C ; length, assume <256
     ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
-    call SEND_PACKET
+AA11:
+    CALL SEND_PACKET
 
     ; now retrieve key, must be 123
+AA12:
     CALL QLD_GETBYTE    ; uses BC D, result in A
     CP  123
     JR NZ,LD_ERR2
@@ -382,6 +437,7 @@ LOADELY1:         ;    //47 delay between the header bytes
     DJNZ LOADELY1
 
     ; now retrieve length, 0 for error
+AA13:
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   L,A
     LD   B,5
@@ -390,6 +446,7 @@ LOADELY2:         ;    //60 delay between the length bytes
     DJNZ LOADELY2
 
     NOP
+AA14:
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   H,A
     OR   L
@@ -404,6 +461,7 @@ LOADELY2:         ;    //60 delay between the length bytes
 
 
     ;  test if saving binary or regular basic
+AA15:
     CALL CHECKCOMMA
     JR   Z, BINLOAD
 
@@ -413,6 +471,7 @@ LOADELY2:         ;    //60 delay between the length bytes
 
 LOADLOOP:
     ; timing  - 74 between calls seems to be more reliable than 70!
+AA16:
     CALL QLD_GETBYTE    ; uses BC D, result in A
     LD   (HL),A
     LD   (HL),A ; dummy for timing
@@ -447,6 +506,7 @@ LD_ERR:
 BINLOAD: ; HL points to the comma in arg string, now parse addr, length
     INC  HL
     DEC  C
+AA17:
     CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
     JR NZ, LD_ERR2   ; parse error
     ; addr in DE
@@ -469,9 +529,9 @@ PARS_LLOOP:     ; look for first number
 	JR Z, PARS_SKIPWS ; skip whitespace
 PARS_LLP2:
 	SUB 01ch	;"0"
-	JP C,PARSFAIL
+	JR C,PARSFAIL
 	CP 10
-	JP NC,PARSFAIL
+	JR NC,PARSFAIL
 	; have a digit in A,
 	PUSH HL
 	; DE times ten
@@ -519,9 +579,7 @@ TESTPATTERN:
     PUSH HL  ; orig pos of args (w/o prefix T)
     PUSH BC  ; orig lenght of args (w/o prefix T)
     ; Check if we have contact
-;    LD   A, c_T
-;    CALL PRINTA
-    
+AA18:    
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
     AND A
     ; Send LOAD request
@@ -531,7 +589,8 @@ TESTPATTERN:
 
     ld   B,C ; length, assume <256
     ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
-    call SEND_PACKET
+AA19:
+    CALL SEND_PACKET
 
     ; now retrieve 1024 bytes and see how many are correct
     ; gap between byte calls should be 77+12+7 - 17-10 = 69 clocks
@@ -540,6 +599,7 @@ TESTBLOOP:
     PUSH BC
     NOP         ; timing adjust 66/70
     NOP         ; timing adjust 70/74 - 74 seems to be more reliable than 70!
+AA20:
     CALL QLD_GETBYTE    ; uses BC D, result in A
     POP  BC
     CP   C  ; incomming data in A is 0,1,2,3,4...255,0,1... as byte
@@ -565,11 +625,11 @@ SAVE1:
     PUSH BC  ; orig lenght of args (w/o prefix S)
 
 
-    LD   A, c_S
-    CALL PRINTA
+;    LD   A, c_S
+;    CALL PRINTA
 
     ; Check if we have contact
-   
+AA21:   
     CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
     ; Send SAVE request
     POP  BC
@@ -583,6 +643,7 @@ SAVE1:
     PUSH BC
 
     ;  test if saving binary or regular basic
+AA22:
     CALL CHECKCOMMA
     JR   Z, BINSAVE
 
@@ -600,13 +661,15 @@ SAVE_CONT: ;continue common path of BIN and BASIC save
 	EX DE,HL	; HL' must be restored, save in DE'
     POP  BC
     POP  HL ; recover name pointer/length
+AA23:
     CALL SKIPEMPTY 
     XOR  A
     CP   C
     JR   Z, ERREXIT3 ; NO NAME
     ld   B,C ; length, assume <256
     ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
-    call SEND_PACKET
+AA24:
+    CALL SEND_PACKET
 	EX DE,HL	; HL' must be restored, was saved in DE'
     EXX ; Recover, now HL=Start, BC=length
 	
@@ -618,7 +681,8 @@ SVSENDFUL:
     PUSH BC
     LD   B,0    ; 256 bytes
     LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
-    call SEND_PACKET
+AA25:
+    CALL SEND_PACKET
     POP  BC
     DEC  B
     JR   SVSENDFUL
@@ -629,9 +693,11 @@ SVSENDLAST:
     JR   Z, SVSENDEND
     LD   B,C ; length
     LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
-    call SEND_PACKET
+AA26:
+    CALL SEND_PACKET
 
 SVSENDEND:
+AA27:
     CALL QS_FINAL_ACK   ; Z set for success
     JR   NZ, ERREXIT
     XOR  A
@@ -642,11 +708,13 @@ SVSENDEND:
 BINSAVE: ; HL points to the comma in arg string, now parse addr, length
     INC  HL
     DEC  C
+AA28:
     CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
     JR NZ, BSERREXIT   ; parse error
     PUSH DE ; store addr, from now on have to use BSERREXIT2 to stack-unwind here
     INC  HL
     DEC  C
+AA29:
     CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
     JR NZ, BSERREXIT2   ; parse error
     ; length in DE
@@ -672,7 +740,7 @@ BSERREXIT:
 
 
 HLPTXT:
-	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,0, c_0,27,c_0+1,c_0,c_0,c_NEWLINE
+	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,0, c_0,27,c_0+1,c_0,c_0+1,c_NEWLINE
     db c_NEWLINE
 ;	db "INFO  ",22h,"I",22h,0dh
 ;	db "DIR   ",22h,"D",22h,0dh
@@ -681,13 +749,15 @@ HLPTXT:
 ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
 ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
 	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
-	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
-;	db "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
-	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+    db c_NEWLINE
+	db c_I,c_N,c_S,c_T,c_A,c_L,c_L, 0 , c_D,c_R,c_V, 0 ,c_T,c_O, 0, c_R,c_A,c_M,  0, 11, c_I, 0, c_A, c_D, c_D, c_R,  11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+;	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+    db c_NEWLINE
 	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "FOR SIGGI'S UFM :V/R/K",0dh
     db c_NEWLINE
@@ -695,7 +765,7 @@ HLPTXT:
 
 
 ; === Subroutine print help text ====
-
+AA08:
 HLP:	LD HL,HLPTXT
 HLP1:	LD A,(HL)
 	CP $FF
@@ -721,7 +791,7 @@ W2:
     pop BC
     djnz W1
     LD E, 75    ; ID for ZX_SAVE_TAG_QSAVE_START
-    call $031F  ; SAVE byte in E
+    CALL $031F  ; SAVE byte in E
     OUT     ($FF),A         ; ; signal to 1 / syncoff, send hsyncs
     ld b,0
 W4:
@@ -729,11 +799,13 @@ W4:
     RET
 
 TRY_HANDSHAKE:  ; See if WESPI responds, return 1 if so, 0 for timeout
+AA30:
     CALL GO_QSAVE_MODE
     ld   hl, 16388 ; RAMTOP
     ld   B,2
     ld   C,90 ; packet ID ZX_QSAVE_TAG_HANDSHAKE
-    call SEND_PACKET
+AA31:
+    CALL SEND_PACKET
     ld   b,181  ; timeout, 500ms (inner loop 3.15ms)
 HS_LOOP1:
     PUSH BC
@@ -776,15 +848,18 @@ QS_FINAL_ACK:  ; Get info is operation was sussessful (Z) or failed (NZ), USES B
     ld   hl, QS_FINAL_SZ ; Requested length
     ld   B,1
     LD   C,99 ; packet ID ZX_QSAVE_TAG_END_RQ
-    call SEND_PACKET
+AA32:
+    CALL SEND_PACKET
 
     ; await reply, first byte is tag, then result
+AA33:
     CALL QLD_GETBYTE
     CP   42 ; tag
     RET  NZ
     ld B,8  ; 
 QSFDLY:
     djnz lgapdly     ; 13*n-5 = 47 for 4
+AA34:
     CALL QLD_GETBYTE
     CP   1 ; result
     RET    ; Z on match
@@ -870,8 +945,8 @@ waitnline:
 
 
     ; Send packettype in C
-
-    call SENDNIBBLE ;151, so we need 56 cycles between nibbles to get to 207 for one hsync line
+AA35:
+    CALL SENDNIBBLE ;151, so we need 56 cycles between nibbles to get to 207 for one hsync line
 
     INC  HL         ; 6  ; DUMMY matching later dec
     LD   A,(HL)     ; 7 
@@ -881,8 +956,8 @@ waitnline:
     LD   A,(HL)     ; 7 
     LD   A,(HL)     ; 7 
     NOP
-
-    call SENDNIBBLE ;151
+AA36:
+    CALL SENDNIBBLE ;151
 
     DEC  HL 
     LD   A,(HL)     ; 7 
@@ -894,8 +969,8 @@ waitnline:
     LD C,B             ;4
 
     ; Send length in B
-
-    call SENDNIBBLE ;151
+AA37:
+    CALL SENDNIBBLE ;151
 
     INC  HL         ; 6  ; DUMMY matching later dec
     LD   A,(HL)     ; 7 
@@ -905,7 +980,7 @@ waitnline:
     LD   A,(HL)     ; 7 
     LD   A,(HL)     ; 7 
     NOP             ; 4
-
+AA38:
     call SENDNIBBLE ;151
 
     DEC  HL 
@@ -917,6 +992,7 @@ byteloop:
     LD   A,(HL)     ; 7 
     LD   C,(HL)     ; 7 
     NOP
+AA39:
     call SENDNIBBLE ;151
     INC  HL         ; 6
     LD   A,(HL)     ; 7 
@@ -927,6 +1003,7 @@ byteloop:
     LD   A,(HL)     ; 7 
     NOP
                     ; 56
+AA40:    
     CALL SENDNIBBLE ;151
     DJNZ byteloop   ; 13
     OUT     ($FF),A ; 11        ; signal to 1 /off
@@ -1049,16 +1126,19 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_I   ; TTTT2 = QLOAD test
+   db c_H   ; Help
+  
+ ;  db c_I   ; I 10000 install
+   ;db c_I   ; TTTT2 = QLOAD test
    ;db c_T   ; SNNN = dummy save for testing
    ;db c_S   ; STST,1024,100 binsave
    ;db c_T   ; LTST,1024   binload
-   db 0   ; 
-   db c_0+1   ; 
-   db c_0+0   ; 
-   db c_0+0   ; 
-   db c_0+0   ; 
-   db c_0+0   ; 
+ ;  db 0   ; 
+ ;  db c_0+1   ; 
+ ;  db c_0+0   ; 
+ ;  db c_0+0   ; 
+ ;  db c_0+0   ; 
+ ;  db c_0+0   ; 
 ;   db 26
 ;   db c_0+1   ; 
 ;   db c_0+0   ; 

@@ -29,15 +29,15 @@
 0029   4009              
 0030   4009 00             db 0     	;VERSN 
 0031   400A 00 00          dw 0     	;E_PPC 
-0032   400C C1 44          dw dfile      ;D_FILE 
-0033   400E C2 44          dw dfile+1    ;DF_CC 
-0034   4010 DC 44          dw var   	;VARS 
+0032   400C 0F 45          dw dfile      ;D_FILE 
+0033   400E 10 45          dw dfile+1    ;DF_CC 
+0034   4010 2A 45          dw var   	;VARS 
 0035   4012 00 00          dw 0     	;DEST 
-0036   4014 DD 44          dw var+1      ;E_LINE 
-0037   4016 DC 44          dw last-1     ;c_ADD 
+0036   4014 2B 45          dw var+1      ;E_LINE 
+0037   4016 2A 45          dw last-1     ;c_ADD 
 0038   4018 00 00          dw 0     	;X_PTR 
-0039   401A DD 44          dw last  	;STKBOT 
-0040   401C DD 44          dw last  	;STKEND 
+0039   401A 2B 45          dw last  	;STKBOT 
+0040   401C 2B 45          dw last  	;STKEND 
 0041   401E 00             db 0     	;BERG 
 0042   401F 5D 40          dw membot     ;MEM 
 0043   4021 00             db 0     ;not used 
@@ -45,7 +45,7 @@
 0045   4023 01 00          dw 1     ;S_TOP 
 0046   4025 FF FF FF       db $FF,$FF,$FF     ;LAST_K 
 0047   4028 37             db 55    ;MARGIN 
-0048   4029 A4 44          dw line10     ;NXTLIN   line10   dfile
+0048   4029 F8 44          dw line10     ;NXTLIN   line10   dfile
 0049   402B 00 00          dw 0     ;OLDPPC 
 0050   402D 00             db 0     ;FLAGX 
 0051   402E 00 00          dw 0     ;STRLEN 
@@ -66,7 +66,7 @@
 0066   407D              
 0067   407D             line0: 
 0068   407D 00 00          db 0,0   ;line number 
-0069   407F 23 04          dw line10-$-2 ;line length 
+0069   407F 77 04          dw line10-$-2 ;line length 
 0070   4081 EA             db $ea   ; REM 
 0071   4082             
 0072   4082             
@@ -121,999 +121,1082 @@
 0121   4082             ;
 0122   4082             DRIVER_START:
 0123   4082             BASIC_START:
-0124   4082 CD DC 43    	CALL NAME	; get command line arg
-0125   4085 18 1B       	JR BASIC_CONT
-0126   4087 00          	NOP
-0127   4088 00          	NOP
-0128   4089 00          	NOP
-0129   408A             
-0130   408A             CALL_START:	; (IN UFM als START_ADDR+6 festgelegt)
-0131   408A 21 3C 40    	LD HL,UFM_CMDBUF
-0132   408D E5              PUSH HL
-0133   408E                 ;  get length in BC by parsing for '"' or so..
-0134   408E 01 00 00        LD   BC,0
-0135   4091             ENDPRSLP:
-0136   4091 7E              LD   A,(HL)
-0137   4092 FE 0B           CP   11     ; is " ?
-0138   4094 28 04           JR   Z, EXITPRSLP
-0139   4096 03              INC  BC
-0140   4097 23              INC  HL
-0141   4098 18 F7           JR   ENDPRSLP
-0142   409A             EXITPRSLP:
-0143   409A E1              POP  HL ; original pointer
-0144   409B CD B8 40    	CALL GENER_START
-0145   409E 32 32 40    	LD (UFM_ERRNO),A
-0146   40A1 C9          	RET
-0147   40A2             
-0148   40A2             BASIC_CONT:
-0149   40A2             AA01:
-0150   40A2 CD B8 40    	CALL GENER_START ; A is 0 for ok, !=0 for error
-0151   40A5 A7          	AND A
-0152   40A6 28 0F       	JR Z,BAS_OK
-0153   40A8 3E 2A       	LD A,c_E		; Ausgabe ERR
-0154   40AA D7          	RST 10h 
-0155   40AB 3E 37       	LD A,c_R
-0156   40AD D7          	RST 10h
-0157   40AE 3E 37           LD A,c_R
-0158   40B0 D7          	RST 10h
-0159   40B1 3E 76           LD A,c_NEWLINE
-0160   40B3 D7          	RST 10h
-0161   40B4                 ; exit
-0162   40B4 AF              XOR A
-0163   40B5 CF          	RST 08h
-0164   40B6 09              db  09h             ; Error Report: Invalid argument
-0165   40B7             	;db 0FFh
-0166   40B7             
-0167   40B7             BAS_OK:
-0168   40B7 C9          	RET  ; TODO check if RET or better RST8 with -1
-0169   40B8             ;    XOR A		; sonst zurueck nach BASIC
-0170   40B8             ;	RST 08h
-0171   40B8             ;	db 0FFh
-0172   40B8             	
-0173   40B8             
-0174   40B8             GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for okay, BC retval to basic
-0175   40B8 7E          	LD A,(HL)   ; HL=start, BC=length
-0176   40B9 23              INC  HL
-0177   40BA 0B              DEC  BC
-0178   40BB             AA00:
-0179   40BB 11 DE 40        LD   DE,GENER_END
-0180   40BE D5              PUSH DE     ; ret adddess
-0181   40BF             ;	CP c_I		; Info
-0182   40BF             ;	JP Z,INFO1
-0183   40BF FE 38       	CP c_S		; Save
-0184   40C1 CA 51 42    	JP Z,SAVE1
-0185   40C4 FE 31       	CP c_L		; Load
-0186   40C6 CA 7B 41    	JP Z,LOAD1
-0187   40C9             ;	CP 29h		; ist es ein D;
-0188   40C9             ;	JP Z,DIR1
-0189   40C9             ;	CP 3Bh		; ist es ein V (UFM)
-0190   40C9             ;	JP Z,DIRV1
-0191   40C9             ;	CP 30h		; ist es ein K (UFM)
-0192   40C9             ;	JP Z,DIRK1
-0193   40C9             ;	CP 37h		; ist es ein R
-0194   40C9             ;	JP Z,RENAM1
-0195   40C9             ;	CP 2Ah		; ist es ein E
-0196   40C9             ;	JP Z,ERAS1
-0197   40C9 FE 2E       	CP c_I		;  I
-0198   40CB             AA02:
-0199   40CB CA E6 40    	JP Z,INST_RELOC
-0200   40CE FE 39       	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
-0201   40D0 CA 25 42    	JP Z,TESTPATTERN
-0202   40D3 FE 2D       	CP c_H		; Help
-0203   40D5             AA03:
-0204   40D5 CA 47 43    	JP Z,HLP
-0205   40D8 FE 0F       	CP 0Fh		; ist es ein ?
-0206   40DA             AA04:
-0207   40DA CA 47 43    	JP Z,HLP
-0208   40DD C9              ret 
-0209   40DE             
-0210   40DE             GENER_END:
-0211   40DE F5              PUSH AF ; holds our error status
-0212   40DF C5              PUSH BC ; ret value...
-0213   40E0 CD 07 02    	CALL SHOW
-0214   40E3 C1              POP  BC
-0215   40E4 F1              POP  AF
-0216   40E5 C9          	RET
-0217   40E6             	
-0218   40E6             INST_RELOC:
-0219   40E6                 ; address with new memory location follows. Cpoies the driver and corrects the absolute adresses accordingly
-0220   40E6 3E 2E           LD   A, c_I
-0221   40E8 CD 73 41        CALL PRINTA
-0222   40EB CD E4 41        CALL PARS_DEC_NUM   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
-0223   40EE 3E 01           LD   A,1
-0224   40F0 C0              RET  NZ
-0225   40F1 D5              PUSH DE
-0226   40F2 CD E7 02    	CALL FAST	; go to fast mode so we can use index regs
-0227   40F5 D1              POP  DE
-0228   40F6 DD E5           PUSH IX     ; save IX till end
-0229   40F8 D5              PUSH DE
-0230   40F9 DD E1           POP  IX     ; new start addr in IX, will need it quite often
-0231   40FB                 ; copy RAW driver
-0232   40FB 21 82 40        LD HL,DRIVER_START
-0233   40FE 01 21 04        LD BC,DRIVER_END-DRIVER_START
-0234   4101 ED B0           LDIR
-0235   4103                 ; correct abs addr occurrences, all in this table:
-0236   4103 21 47 41        LD HL, RELOC_TABLE
-0237   4106             RLCLOOP:
-0238   4106 5E              LD   E,(HL)
-0239   4107 23              INC  HL
-0240   4108 56              LD   D,(HL)
-0241   4109 23              INC  HL
-0242   410A 7A              LD   A,D
-0243   410B B3              OR  E
-0244   410C 28 19           JR   Z, ENDRLCCP    ; null end marker
-0245   410E E5              PUSH HL ; next RELOC_TABLE pos
-0246   410F                 ; DE is position of the addr tag relative to start
-0247   410F DD E5           PUSH IX
-0248   4111 E1              POP  HL
-0249   4112 19              ADD  HL,DE
-0250   4113                 ; HL is the absolute label pos to modify
-0251   4113 E5              PUSH HL ; need it later to write
-0252   4114 5E              LD   E,(HL) 
-0253   4115 23              INC  HL
-0254   4116 56              LD   D,(HL)
-0255   4117 21 7E BF        LD   HL, - DRIVER_START
-0256   411A 19              ADD  HL,DE
-0257   411B                 ; HL is relative addr
-0258   411B DD E5           PUSH IX
-0259   411D D1              POP  DE
-0260   411E 19              ADD  HL,DE
-0261   411F EB              EX   DE,HL
-0262   4120                 ; DE is new abs addr
-0263   4120 E1              POP  HL
-0264   4121 73              LD   (HL),E
-0265   4122 23              INC  HL
-0266   4123 72              LD   (HL),D
-0267   4124 E1              POP HL ; restore RELOC_TABLE pos
-0268   4125 18 DF           JR RLCLOOP
-0269   4127             ENDRLCCP:
-0270   4127 DD E1           POP  IX
-0271   4129 AF              XOR  A
-0272   412A 01 21 04        LD   BC,DRIVER_END-DRIVER_START
-0273   412D C9              RET
-0274   412E              
-0275   412E             
-0276   412E             PRINTHEX:
-0277   412E F5          	PUSH AF
-0278   412F E5          	PUSH HL
-0279   4130 C5          	PUSH BC
-0280   4131 4F          	LD C,A		; SAVE
-0281   4132 CB 3F       	SRL A
-0282   4134 CB 3F       	SRL A
-0283   4136 CB 3F       	SRL A
-0284   4138 CB 3F       	SRL A
-0285   413A C6 1C       	ADD A,1CH	; Offset to '0'
-0286   413C D7          	RST 10H
-0287   413D 79          	LD A,C
-0288   413E E6 0F       	AND	0FH		; MASK
-0289   4140 C6 1C       	ADD A,1CH	; Offset to '0'
-0290   4142 D7          	RST 10H
-0291   4143 C1          	POP BC
-0292   4144 E1          	POP HL
-0293   4145 F1          	POP AF
-0294   4146 C9          	RET
-0295   4147             
-0296   4147             
-0297   4147             RELOC_TABLE:
-0298   4147              ;   dw 0
-0299   4147 3A 00           dw AA00+1-DRIVER_START
-0300   4149 21 00           dw AA01+1-DRIVER_START
-0301   414B 4A 00           dw AA02+1-DRIVER_START
-0302   414D 54 00           dw AA03+1-DRIVER_START
-0303   414F 59 00           dw AA04+1-DRIVER_START
-0304   4151 00 00           dw 0    ; final
-0305   4153             
-0306   4153             
-0307   4153             
-0308   4153             CHECKCOMMA:  ; Z is set when comma seperator found in string, NZ if not, uses A
-0309   4153                 ; BC =0?
-0310   4153 AF              XOR  A
-0311   4154 B9              CP   C
-0312   4155 20 02           JR   NZ,CHKK_CONT
-0313   4157 3C              INC  A ; clear the Z flag
-0314   4158 C9              RET     ; no match till end
-0315   4159             CHKK_CONT:
-0316   4159 7E              LD   A, (HL)
-0317   415A FE 1A           CP   26     ; comma
-0318   415C C8              RET  z
-0319   415D FE 19           CP   25     ; also check for semicolon
-0320   415F C8              RET  z
-0321   4160 23              INC  HL
-0322   4161 0B              DEC  BC
-0323   4162 18 EF           JR CHECKCOMMA
-0324   4164             
-0325   4164             
-0326   4164             SKIPEMPTY:  ; Z is set when comma seperator found in string, NZ if not, uses A
-0327   4164                 ; BC =0?
-0328   4164 AF              XOR  A
-0329   4165 B9              CP   C
-0330   4166 20 05           JR   NZ,CHKE_CONT
-0331   4168 B8              CP   B
-0332   4169 20 02           JR   NZ,CHKE_CONT
-0333   416B 3C              INC  A ; clear the Z flag
-0334   416C C9              RET     ; no match till end
-0335   416D             CHKE_CONT:
-0336   416D BE              CP   (HL)
-0337   416E C0              RET  NZ ; not empty,leave
-0338   416F 23              INC  HL
-0339   4170 0B              DEC  BC
-0340   4171 18 F1           JR SKIPEMPTY
-0341   4173             
-0342   4173             PRINTA:
-0343   4173 E5              PUSH HL
-0344   4174 D5              PUSH DE
-0345   4175 C5              PUSH BC
-0346   4176 D7              RST 10H
-0347   4177 C1              POP  BC
-0348   4178 D1              POP  DE
-0349   4179 E1              POP  HL
-0350   417A C9              RET
-0351   417B                 
-0352   417B             
-0353   417B             LOAD1:
-0354   417B             	; HL points to arg string, BC number of chars
-0355   417B E5              PUSH HL  ; orig pos of args (w/o prefix T)
-0356   417C C5              PUSH BC  ; orig lenght of args (w/o prefix T)
-0357   417D                 ; Check if we have contact
-0358   417D 3E 31           LD   A, c_L
-0359   417F CD 73 41        CALL PRINTA
-0360   4182                 
-0361   4182 CD 73 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
-0362   4185 A7              AND A
-0363   4186                 ; Send LOAD request
-0364   4186 C1              POP  BC
-0365   4187 E1              POP  HL ; recover name pointer/length
-0366   4188 28 4B           JR   Z, LD_ERR ; NO CONTACT after TRY_HANDSHAKE
-0367   418A E5              PUSH HL  ; and again store for binload
-0368   418B C5              PUSH BC  ; 
-0369   418C             
-0370   418C 41              ld   B,C ; length, assume <256
-0371   418D 0E 5D           ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
-0372   418F CD F0 43        call SEND_PACKET
-0373   4192             
-0374   4192                 ; now retrieve key, must be 123
-0375   4192 CD C2 43        CALL QLD_GETBYTE    ; uses BC D, result in A
-0376   4195 FE 7B           CP  123
-0377   4197 20 3A           JR NZ,LD_ERR2
-0378   4199 06 04           LD   B,4
-0379   419B 7E              LD  A,(HL)  ; dummy for timing
-0380   419C              
-0381   419C             LOADELY1:         ;    //47 delay between the header bytes
-0382   419C 10 FE           DJNZ LOADELY1
-0383   419E             
-0384   419E                 ; now retrieve length, 0 for error
-0385   419E CD C2 43        CALL QLD_GETBYTE    ; uses BC D, result in A
-0386   41A1 6F              LD   L,A
-0387   41A2 06 05           LD   B,5
-0388   41A4             
-0389   41A4             LOADELY2:         ;    //60 delay between the length bytes
-0390   41A4 10 FE           DJNZ LOADELY2
-0391   41A6             
-0392   41A6 00              NOP
-0393   41A7 CD C2 43        CALL QLD_GETBYTE    ; uses BC D, result in A
-0394   41AA 67              LD   H,A
-0395   41AB B5              OR   L
-0396   41AC 28 25           JR Z,LD_ERR2
-0397   41AE EB              EX   DE,HL
-0398   41AF                 ; Here we have DE= len
-0399   41AF                 ; get addr
-0400   41AF C1              POP  BC
-0401   41B0 E1              POP  HL ; recover name pointer/length
-0402   41B1 D5              PUSH DE             ; length, will go to BC below
-0403   41B2 D5              PUSH DE             ; length, again, for end result
-0404   41B3             
-0405   41B3             
-0406   41B3                 ;  test if saving binary or regular basic
-0407   41B3 CD 53 41        CALL CHECKCOMMA
-0408   41B6 28 20           JR   Z, BINLOAD
-0409   41B8             
-0410   41B8                 ; LOAD BASIC program if not BINLOAD, set addr
-0411   41B8 21 09 40    	LD HL,4009h		; 
-0412   41BB 1E 01           LD   E,1        ; mark as basic load
-0413   41BD             
-0414   41BD             LOADLOOP:
-0415   41BD                 ; timing  - 74 between calls seems to be more reliable than 70!
-0416   41BD CD C2 43        CALL QLD_GETBYTE    ; uses BC D, result in A
-0417   41C0 77              LD   (HL),A
-0418   41C1 77              LD   (HL),A ; dummy for timing
-0419   41C2 23              INC  HL
-0420   41C3 C1              POP  BC     ; get remaining length
-0421   41C4 0B              DEC  BC
-0422   41C5 79              LD   A,C
-0423   41C6 B0              OR   B
-0424   41C7 28 03           JR Z, LD_END
-0425   41C9 C5              PUSH BC
-0426   41CA 18 F1           JR  LOADLOOP
-0427   41CC             LD_END:  
-0428   41CC C1              POP  BC ; orig length
-0429   41CD AF              XOR  A
-0430   41CE BB              CP   E  ; 0 for binary
-0431   41CF C8              RET   Z ; normal return for binload with length in BC
-0432   41D0                 ; end for BASIC loader
-0433   41D0 D1              POP  DE ; dummy, ret addr
-0434   41D1 CF          	RST 08h ;
-0435   41D2 FF          	db 0FFh
-0436   41D3             
-0437   41D3             
-0438   41D3             LD_ERR2:
-0439   41D3 D1              POP  DE ; dummy
-0440   41D4 D1              POP  DE ; dummy
-0441   41D5             LD_ERR:
-0442   41D5 3E 01           LD   A,1
-0443   41D7 C9              RET ; BC WILL be at maximum now
-0444   41D8             
-0445   41D8             
-0446   41D8             
-0447   41D8             BINLOAD: ; HL points to the comma in arg string, now parse addr, length
-0448   41D8 23              INC  HL
-0449   41D9 0D              DEC  C
-0450   41DA CD E4 41        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
-0451   41DD 20 F4           JR NZ, LD_ERR2   ; parse error
-0452   41DF                 ; addr in DE
-0453   41DF EB              EX   DE,HL
-0454   41E0 1E 00           LD   E,0    ; mark as binary
-0455   41E2 18 D9           JR LOADLOOP
-0456   41E4             
-0457   41E4             
-0458   41E4             
-0459   41E4             ; parse a decimal number
-0460   41E4             PARS_DEC_NUM:   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
-0461   41E4 11 00 00    	LD DE, 0
-0462   41E7 AF              XOR  A
-0463   41E8 B9              CP   C
-0464   41E9 28 37           JR Z,PARSFAIL
-0465   41EB             
-0466   41EB             PARS_LLOOP:     ; look for first number
-0467   41EB 7E          	LD A,(HL)
-0468   41EC A7          	AND A
-0469   41ED 28 2B       	JR Z, PARS_SKIPWS ; skip whitespace
-0470   41EF             PARS_LLP2:
-0471   41EF D6 1C       	SUB 01ch	;"0"
-0472   41F1 DA 22 42    	JP C,PARSFAIL
-0473   41F4 FE 0A       	CP 10
-0474   41F6 D2 22 42    	JP NC,PARSFAIL
-0475   41F9             	; have a digit in A,
-0476   41F9 E5          	PUSH HL
-0477   41FA             	; DE times ten
-0478   41FA 62          	LD H,D      ; now in both HL and DE
-0479   41FB 6B          	LD L,E
-0480   41FC 29          	ADD HL,HL
-0481   41FD 29          	ADD HL,HL
-0482   41FE 29          	ADD HL,HL ; times 8 so far
-0483   41FF 19          	ADD HL,DE
-0484   4200 19          	ADD HL,DE
-0485   4201             	; Add new digit
-0486   4201 16 00       	LD D,0
-0487   4203 5F          	LD E,A
-0488   4204 19          	ADD HL,DE
-0489   4205 EB          	EX DE,HL    ; new value of DE
-0490   4206 E1          	POP HL  ; pointer to argline back in HL
-0491   4207 23          	INC HL
-0492   4208 0D          	DEC C
-0493   4209 28 15           JR Z,PARSDONE
-0494   420B 7E          	LD A,(HL)   ; load next char to see if end
-0495   420C FE 1A           CP   26 ;  ','
-0496   420E 28 10           JR Z,PARSDONE
-0497   4210 FE 0E           CP   14 ;  ';'
-0498   4212 28 0C           JR Z,PARSDONE
-0499   4214 FE 0B           CP   11 ;  '"'
-0500   4216 28 08           JR Z,PARSDONE
-0501   4218 18 D5       	JR PARS_LLP2 
-0502   421A             PARS_SKIPWS:
-0503   421A 23          	INC HL
-0504   421B 0D          	DEC C
-0505   421C 28 04           JR Z,PARSFAIL
-0506   421E 18 CB       	JR PARS_LLOOP 
-0507   4220             
-0508   4220             PARSDONE:
-0509   4220 AF              XOR  A
-0510   4221 C9          	RET
-0511   4222             PARSFAIL:
-0512   4222 AF              XOR  A
-0513   4223 3C              INC  A
-0514   4224 C9          	RET
-0515   4225             
-0516   4225             
-0517   4225             TESTPATTERN:
-0518   4225             	; HL points to arg string, BC number of chars
-0519   4225 E5              PUSH HL  ; orig pos of args (w/o prefix T)
-0520   4226 C5              PUSH BC  ; orig lenght of args (w/o prefix T)
-0521   4227                 ; Check if we have contact
-0522   4227             ;    LD   A, c_T
-0523   4227             ;    CALL PRINTA
-0524   4227                 
-0525   4227 CD 73 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
-0526   422A A7              AND A
-0527   422B                 ; Send LOAD request
-0528   422B C1              POP  BC
-0529   422C E1              POP  HL ; recover name pointer/length
-0530   422D 28 1C           JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
-0531   422F             
-0532   422F 41              ld   B,C ; length, assume <256
-0533   4230 0E 5D           ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
-0534   4232 CD F0 43        call SEND_PACKET
-0535   4235             
-0536   4235                 ; now retrieve 1024 bytes and see how many are correct
-0537   4235                 ; gap between byte calls should be 77+12+7 - 17-10 = 69 clocks
-0538   4235 01 00 00        LD   BC,0
-0539   4238             TESTBLOOP:
-0540   4238 C5              PUSH BC
-0541   4239 00              NOP         ; timing adjust 66/70
-0542   423A 00              NOP         ; timing adjust 70/74 - 74 seems to be more reliable than 70!
-0543   423B CD C2 43        CALL QLD_GETBYTE    ; uses BC D, result in A
-0544   423E C1              POP  BC
-0545   423F B9              CP   C  ; incomming data in A is 0,1,2,3,4...255,0,1... as byte
-0546   4240 3E 00           LD   A,0 ; not affect flags, test never reports errors to better automatize
-0547   4242 C0              RET  NZ ; report BC at point of first failure
-0548   4243 03              INC  BC
-0549   4244 3E 10           LD   A,16 ; 4kbyte testsize
-0550   4246 B8              CP   B
-0551   4247 20 EF           JR   NZ, TESTBLOOP
-0552   4249 AF              XOR  A
-0553   424A C9              RET ; BC WILL be at maximum now
-0554   424B             
-0555   424B             
-0556   424B             
-0557   424B             ERREXIT:
-0558   424B 3E 01           LD   A,1
-0559   424D 01 00 00        LD   BC,0
-0560   4250 C9              RET
-0561   4251             
-0562   4251             SAVE1:
-0563   4251             	; HL points to arg string, BC number of chars
-0564   4251 E5              PUSH HL  ; orig pos of args (w/o prefix S)
-0565   4252 C5              PUSH BC  ; orig lenght of args (w/o prefix S)
-0566   4253             
-0567   4253             
-0568   4253 3E 38           LD   A, c_S
-0569   4255 CD 73 41        CALL PRINTA
-0570   4258             
-0571   4258                 ; Check if we have contact
-0572   4258                
-0573   4258 CD 73 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
-0574   425B                 ; Send SAVE request
-0575   425B C1              POP  BC
-0576   425C E1              POP  HL ; recover name pointer/length
-0577   425D                 ; evauate connect result
-0578   425D A7              AND A
-0579   425E 28 EB           JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
-0580   4260             
-0581   4260                 ; again store original argument string, will need it now and when sending name
-0582   4260 E5              PUSH HL
-0583   4261 C5              PUSH BC
-0584   4262             
-0585   4262                 ;  test if saving binary or regular basic
-0586   4262 CD 53 41        CALL CHECKCOMMA
-0587   4265 28 43           JR   Z, BINSAVE
-0588   4267             
-0589   4267                 ; SAVE BASIC program if not BINSAVE, pre-calc addr,size into HL and BC
-0590   4267 11 09 40    	LD DE,4009h		; Get length
-0591   426A 2A 14 40    	LD HL,(ELINE)	
-0592   426D A7          	AND A		; clear carry
-0593   426E ED 52       	SBC HL,DE	; HL=length
-0594   4270 44          	LD B,H
-0595   4271 4D          	LD C,L
-0596   4272 EB          	EX DE,HL	; Now HL=Start, BC=length
-0597   4273             
-0598   4273             SAVE_CONT: ;continue common path of BIN and BASIC save
-0599   4273 D9              EXX     ; store payload addr and length for now
-0600   4274 EB          	EX DE,HL	; HL' must be restored, save in DE'
-0601   4275 C1              POP  BC
-0602   4276 E1              POP  HL ; recover name pointer/length
-0603   4277 CD 64 41        CALL SKIPEMPTY 
-0604   427A AF              XOR  A
-0605   427B B9              CP   C
-0606   427C 28 40           JR   Z, ERREXIT3 ; NO NAME
-0607   427E 41              ld   B,C ; length, assume <256
-0608   427F 0E 5B           ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
-0609   4281 CD F0 43        call SEND_PACKET
-0610   4284 EB          	EX DE,HL	; HL' must be restored, was saved in DE'
-0611   4285 D9              EXX ; Recover, now HL=Start, BC=length
-0612   4286             	
-0613   4286             SVSENDFUL:
-0614   4286 AF              XOR  A
-0615   4287 B8              CP   B
-0616   4288 28 0C           JR   Z, SVSENDLAST
-0617   428A                 ; send full packets
-0618   428A C5              PUSH BC
-0619   428B 06 00           LD   B,0    ; 256 bytes
-0620   428D 0E 5F           LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
-0621   428F CD F0 43        call SEND_PACKET
-0622   4292 C1              POP  BC
-0623   4293 05              DEC  B
-0624   4294 18 F0           JR   SVSENDFUL
-0625   4296             
-0626   4296             SVSENDLAST:
-0627   4296 AF              XOR  A
-0628   4297 B9              CP   C
-0629   4298 28 06           JR   Z, SVSENDEND
-0630   429A 41              LD   B,C ; length
-0631   429B 0E 5F           LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
-0632   429D CD F0 43        call SEND_PACKET
-0633   42A0             
-0634   42A0             SVSENDEND:
-0635   42A0 CD A8 43        CALL QS_FINAL_ACK   ; Z set for success
-0636   42A3 20 A6           JR   NZ, ERREXIT
-0637   42A5 AF              XOR  A
-0638   42A6 01 01 00        LD   BC, 1
-0639   42A9 C9          	RET
-0640   42AA             
-0641   42AA             
-0642   42AA             BINSAVE: ; HL points to the comma in arg string, now parse addr, length
-0643   42AA 23              INC  HL
-0644   42AB 0D              DEC  C
-0645   42AC CD E4 41        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
-0646   42AF 20 13           JR NZ, BSERREXIT   ; parse error
-0647   42B1 D5              PUSH DE ; store addr, from now on have to use BSERREXIT2 to stack-unwind here
-0648   42B2 23              INC  HL
-0649   42B3 0D              DEC  C
-0650   42B4 CD E4 41        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
-0651   42B7 20 0A           JR NZ, BSERREXIT2   ; parse error
-0652   42B9                 ; length in DE
-0653   42B9                 ; Now put HL=Start, BC=length
-0654   42B9 42              LD   B,D
-0655   42BA 4B              LD   C,E
-0656   42BB E1              POP  HL
-0657   42BC 18 B5           JR SAVE_CONT
-0658   42BE             
-0659   42BE             ERREXIT3:
-0660   42BE EB          	EX DE,HL	; HL' must be restored, saved in DE'
-0661   42BF D9              EXX ; Recover
-0662   42C0 3E 01           LD   A,1
-0663   42C2 C9          	RET
-0664   42C3             
-0665   42C3             BSERREXIT2:
-0666   42C3 D1              POP  DE
-0667   42C4             BSERREXIT:
-0668   42C4 C1              POP  BC
-0669   42C5 E1              POP  HL ; recover name pointer/length
-0670   42C6 3E 01           LD   A,1
-0671   42C8 C9          	RET
-0672   42C9             
-0673   42C9             
-0674   42C9             HLPTXT:
-0675   42C9 3F 3D 00 3C 	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,0, c_0,27,c_0+1,c_0,c_0,c_NEWLINE
-0675   42CD 2A 38 35 2E 
-0675   42D1 00 29 37 2E 
-0675   42D5 3B 2A 37 00 
-0675   42D9 1C 1B 1D 1C 
-0675   42DD 1C 76 
-0676   42DF 76              db c_NEWLINE
-0677   42E0             ;	db "INFO  ",22h,"I",22h,0dh
-0678   42E0             ;	db "DIR   ",22h,"D",22h,0dh
-0679   42E0             ;	db "ERASE ",22h,"ENAME.P",22h,0dh
-0680   42E0             ;	db "MKDIR ",22h,"DMVERZ",22h,0dh
-0681   42E0             ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
-0682   42E0             ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
-0683   42E0 31 34 26 29 	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
-0683   42E4 00 00 00 0B 
-0683   42E8 31 33 26 32 
-0683   42EC 2A 0B 76 
-0684   42EF 27 31 34 26 	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
-0684   42F3 29 00 00 0B 
-0684   42F7 31 33 26 32 
-0684   42FB 2A 1A 26 29 
-0684   42FF 29 37 0B 76 
-0685   4303             ;	db "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
-0686   4303 38 26 3B 2A 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
-0686   4307 00 00 00 0B 
-0686   430B 38 33 26 32 
-0686   430F 2A 0B 76 
-0687   4312 27 38 26 3B 	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
-0687   4316 2A 00 00 0B 
-0687   431A 38 33 26 32 
-0687   431E 2A 1A 26 29 
-0687   4322 29 37 1A 31 
-0687   4326 2A 33 0B 76 
-0688   432A             ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
-0689   432A             ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
-0690   432A 39 2A 38 39 	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
-0690   432E 00 00 00 0B 
-0690   4332 39 31 39 39 
-0690   4336 39 1E 0B 76 
-0691   433A 2D 2A 31 35 	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
-0691   433E 00 00 00 0B 
-0691   4342 2D 0B 76 
-0692   4345             ;	db "FOR SIGGI'S UFM :V/R/K",0dh
-0693   4345 76              db c_NEWLINE
-0694   4346 FF          	db $ff
-0695   4347             
-0696   4347             
-0697   4347             ; === Subroutine print help text ====
-0698   4347             
-0699   4347 21 C9 42    HLP:	LD HL,HLPTXT
-0700   434A 7E          HLP1:	LD A,(HL)
-0701   434B FE FF       	CP $FF
-0702   434D 28 04       	JR Z, EXITHLP
-0703   434F D7              RST 10H
-0704   4350 23          	INC HL
-0705   4351 18 F7       	JR HLP1
-0706   4353             EXITHLP:
-0707   4353 01 2A 00        LD   BC,42
-0708   4356 AF              XOR  A
-0709   4357 C9              RET
-0710   4358             
-0711   4358             
-0712   4358             
-0713   4358             GO_QSAVE_MODE:
-0714   4358 CD E7 02    	CALL FAST	; go to fast mode
-0715   435B DB FE           IN      A,($FE)         ; signal to 0 pause    
-0716   435D 06 C8           LD B,200  ; 200=200ms Pause
-0717   435F C5          W1: push BC
-0718   4360 06 00           ld b,0
-0719   4362             W2:
-0720   4362 10 FE           djnz W2     ; 1 millisec (256*4)
-0721   4364 C1              pop BC
-0722   4365 10 F8           djnz W1
-0723   4367 1E 4B           LD E, 75    ; ID for ZX_SAVE_TAG_QSAVE_START
-0724   4369 CD 1F 03        call $031F  ; SAVE byte in E
-0725   436C D3 FF           OUT     ($FF),A         ; ; signal to 1 / syncoff, send hsyncs
-0726   436E 06 00           ld b,0
-0727   4370             W4:
-0728   4370 10 FE           djnz W4     ; 1 millisec (256*4) to go to QSAVE mode
-0729   4372 C9              RET
-0730   4373             
-0731   4373             TRY_HANDSHAKE:  ; See if WESPI responds, return 1 if so, 0 for timeout
-0732   4373 CD 58 43        CALL GO_QSAVE_MODE
-0733   4376 21 04 40        ld   hl, 16388 ; RAMTOP
-0734   4379 06 02           ld   B,2
-0735   437B 0E 5A           ld   C,90 ; packet ID ZX_QSAVE_TAG_HANDSHAKE
-0736   437D CD F0 43        call SEND_PACKET
-0737   4380 06 B5           ld   b,181  ; timeout, 500ms (inner loop 3.15ms)
-0738   4382             HS_LOOP1:
-0739   4382 C5              PUSH BC
-0740   4383 06 00           LD   B,0
-0741   4385             HS_LOOP2:                  ; 35 cycles=10.7us, inner Loop 2.75 millisec
-0742   4385 DB FE           in a,($FE)  ; 11
-0743   4387 17              rla         ; 4
-0744   4388 38 0E           jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
-0745   438A 10 F9           DJNZ HS_LOOP2 ;13
-0746   438C                 ; re-check here to not have a blind spot for outer loop
-0747   438C DB FE           in a,($FE)  ; 11
-0748   438E 17              rla         ; 4
-0749   438F 38 07           jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
-0750   4391 D3 FF           OUT     ($FF),A  ; signal to 1 / syncoff in between to not let levels drift (not good for follow-up cmds?)
-0751   4393 C1              POP  BC
-0752   4394 10 EC           DJNZ HS_LOOP1
-0753   4396                 ; no signal found
-0754   4396 AF              XOR  A
-0755   4397 C9              RET
-0756   4398             
-0757   4398             HS_FOUND
-0758   4398 D3 FF           OUT     ($FF),A  ; signal to 1 / syncoff
-0759   439A                 ; let the output recover with active signal after being low from input. takes about 1ms as seen in oscilloscope
-0760   439A 06 00           LD   B,0
-0761   439C             HS_FINALDELAY: ; 3ms here before next cmd
-0762   439C 7E              LD   A,(HL)
-0763   439D 7E              LD   A,(HL)
-0764   439E 7E              LD   A,(HL)    
-0765   439F 7E              LD   A,(HL)    
-0766   43A0 10 FA           DJNZ HS_FINALDELAY
-0767   43A2 C1              POP  BC
-0768   43A3 3E 01           LD   A,1
-0769   43A5 A7              AND  A
-0770   43A6 C9              RET
-0771   43A7             
-0772   43A7             QS_FINAL_SZ:
-0773   43A7 00              db 0 ; size of return packet to request, use smallest possible
-0774   43A8             
-0775   43A8             QS_FINAL_ACK:  ; Get info is operation was sussessful (Z) or failed (NZ), USES BC DE HL, A
-0776   43A8 21 A7 43        ld   hl, QS_FINAL_SZ ; Requested length
-0777   43AB 06 01           ld   B,1
-0778   43AD 0E 63           LD   C,99 ; packet ID ZX_QSAVE_TAG_END_RQ
-0779   43AF CD F0 43        call SEND_PACKET
-0780   43B2             
-0781   43B2                 ; await reply, first byte is tag, then result
-0782   43B2 CD C2 43        CALL QLD_GETBYTE
-0783   43B5 FE 2A           CP   42 ; tag
-0784   43B7 C0              RET  NZ
-0785   43B8 06 08           ld B,8  ; 
-0786   43BA             QSFDLY:
-0787   43BA 10 0F           djnz lgapdly     ; 13*n-5 = 47 for 4
-0788   43BC CD C2 43        CALL QLD_GETBYTE
-0789   43BF FE 01           CP   1 ; result
-0790   43C1 C9              RET    ; Z on match
-0791   43C2             
-0792   43C2             
-0793   43C2             
-0794   43C2             ; gab between byte calls should be 77+12+7 - 17-10 = 69 clocks
-0795   43C2             
-0796   43C2             QLD_GETBYTE:    ; uses BC D, result in A
-0797   43C2 0E FE           ld c,$fe   ; 7
-0798   43C4 06 08           ld b,8  ; 7    for gap between start and bits
-0799   43C6             
-0800   43C6             lwt_stdly:                  ; 25 cycles=7.7us
-0801   43C6 DB FE           in a,($FE)  ; 11
-0802   43C8 17              rla         ; 4
-0803   43C9 30 FB           jr nc,lwt_stdly ; 12 / 7  (D7=0 is low level, wait for high)
-0804   43CB                 ; trigger is seen 4us too late in average, so wait 48-4 - 4 us now: 130 cy in-in
-0805   43CB             lgapdly:
-0806   43CB 10 FE           djnz lgapdly     ; 13*n-5 = 99 for 8
-0807   43CD 06 08           ld b,8  ; 7
-0808   43CF             lbloop:                 ;  need 104 for 32us
-0809   43CF ED 50           in d,(c)    ; 12
-0810   43D1 CB 12           rl d        ; 8
-0811   43D3 17              rla         ; 4 (rl a is 8)
-0812   43D4 16 04           ld d,4      ; 7
-0813   43D6             lbdly:
-0814   43D6 15              dec d          ; 4          b*16-5 = 59
-0815   43D7 20 FD           jr nz,lbdly     ; 12 / 7
-0816   43D9 10 F4           djnz lbloop     ; 13 / 8
-0817   43DB C9              RET     
-0818   43DC                 
-0819   43DC                 ;ORIGINAL:
-0820   43DC                 ;ld (hl),a   ; 7
-0821   43DC             	;CALL UPDATE  ; will use DE, inc HL    77 clks
-0822   43DC                 ;jr lwt_start     ; 12
-0823   43DC             
-0824   43DC             
-0825   43DC             
-0826   43DC             
-0827   43DC             ;*
-0828   43DC             ;* Evaluate string  start of the string is in HL and the length in BC
-0829   43DC             ;*
-0830   43DC E7          NAME:	RST 20h
-0831   43DD CD 55 0F    	CALL 0F55h ; evaluate
-0832   43E0 3A 01 40    	LD A,(4001h)
-0833   43E3 87          	ADD A,A
-0834   43E4 FA 9A 0D    	JP M,0D9Ah  ; error
-0835   43E7 E1          	POP HL
-0836   43E8 D0          	RET NC
-0837   43E9 E5          	PUSH HL
-0838   43EA CD F8 13    	CALL 13F8h ; get indexvar fom calc stack STK-FETCH
-0839   43ED                 ; For strings, the start of the string is in DE and the length in BC
-0840   43ED 62          	LD H,D
-0841   43EE 6B          	LD L,E
-0842   43EF C9          	RET
-0843   43F0             
-0844   43F0             
-0845   43F0             SEND_PACKET: ; HL points to data, C holds type, B lenght (0=256bytes), HL will point behind sent data afterwards
-0846   43F0 F5              PUSH AF
-0847   43F1 C5              PUSH BC ; BC needed twice, for header, and recovered at end
-0848   43F2 C5              PUSH BC
-0849   43F3             
-0850   43F3 06 E1           LD B,225    ;   TODO 125 should be enough
-0851   43F5             SPWT:
-0852   43F5 10 FE           djnz SPWT     ; 500 microsec  (125*4)  ; let the video lines sync again, require 5 lines (320), some margin added
-0853   43F7             
-0854   43F7                 ; we want all our pulses in sync with the HSYNC pulses to not interfere   
-0855   43F7 AF              XOR A       ; make sure A' not at sync or display position to
-0856   43F8 08              EX AF,AF'   ; just cause short INT on MNI here:
-0857   43F9                             
-0858   43F9 D3 FE           OUT ($FE),A  ; ENABLE NMI
-0859   43FB 76              HALT
-0860   43FC D3 FD           OUT ($FD),A  ; Disable NMI   from here, start first bit in 54us =174cy
-0861   43FE DB FE           IN      A,($FE)         ; signal to 0 /on - syncout
-0862   4400 7E              LD   A,(HL)     ; 7 dummy 
-0863   4401 00              NOP             ; 4
-0864   4402 06 07           LD   B,7
-0865   4404 00              NOP             ; timing adjust to have bits symmetrical in (black-shouldered) line
-0866   4405 D3 FF           OUT     ($FF),A ;11        ; signal to 1 / syncoff
-0867   4407             waitnline:
-0868   4407 10 FE           DJNZ waitnline          ; delay for next line 13 per loop ..
-0869   4409 C1              POP  BC            ;10
-0870   440A             
-0871   440A             
-0872   440A                 ; Send packettype in C
-0873   440A             
-0874   440A CD 50 44        call SENDNIBBLE ;151, so we need 56 cycles between nibbles to get to 207 for one hsync line
-0875   440D             
-0876   440D 23              INC  HL         ; 6  ; DUMMY matching later dec
-0877   440E 7E              LD   A,(HL)     ; 7 
-0878   440F D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
-0879   4411 7E              LD   A,(HL)     ; 7 
-0880   4412 7E              LD   A,(HL)     ; 7 
-0881   4413 7E              LD   A,(HL)     ; 7 
-0882   4414 7E              LD   A,(HL)     ; 7 
-0883   4415 00              NOP
-0884   4416             
-0885   4416 CD 50 44        call SENDNIBBLE ;151
-0886   4419             
-0887   4419 2B              DEC  HL 
-0888   441A 7E              LD   A,(HL)     ; 7 
-0889   441B D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
-0890   441D 7E              LD   A,(HL)     ; 7 
-0891   441E 7E              LD   A,(HL)     ; 7 
-0892   441F 7E              LD   A,(HL)     ; 7 
-0893   4420 7E              LD   A,(HL)     ; 7 
-0894   4421 48              LD C,B             ;4
-0895   4422             
-0896   4422                 ; Send length in B
-0897   4422             
-0898   4422 CD 50 44        call SENDNIBBLE ;151
-0899   4425             
-0900   4425 23              INC  HL         ; 6  ; DUMMY matching later dec
-0901   4426 7E              LD   A,(HL)     ; 7 
-0902   4427 D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
-0903   4429 7E              LD   A,(HL)     ; 7 
-0904   442A 7E              LD   A,(HL)     ; 7 
-0905   442B 7E              LD   A,(HL)     ; 7 
-0906   442C 7E              LD   A,(HL)     ; 7 
-0907   442D 00              NOP             ; 4
-0908   442E             
-0909   442E CD 50 44        call SENDNIBBLE ;151
-0910   4431             
-0911   4431 2B              DEC  HL 
-0912   4432 7E              LD   A,(HL)     ; 7 
-0913   4433             byteloop:
-0914   4433 D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
-0915   4435 7E              LD   A,(HL)     ; 7 
-0916   4436 7E              LD   A,(HL)     ; 7 
-0917   4437 7E              LD   A,(HL)     ; 7 
-0918   4438 4E              LD   C,(HL)     ; 7 
-0919   4439 00              NOP
-0920   443A CD 50 44        call SENDNIBBLE ;151
-0921   443D 23              INC  HL         ; 6
-0922   443E 7E              LD   A,(HL)     ; 7 
-0923   443F D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
-0924   4441 7E              LD   A,(HL)     ; 7 
-0925   4442 7E              LD   A,(HL)     ; 7 
-0926   4443 7E              LD   A,(HL)     ; 7 
-0927   4444 7E              LD   A,(HL)     ; 7 
-0928   4445 00              NOP
-0929   4446                                 ; 56
-0930   4446 CD 50 44        CALL SENDNIBBLE ;151
-0931   4449 10 E8           DJNZ byteloop   ; 13
-0932   444B D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
-0933   444D             
-0934   444D C1              POP  BC
-0935   444E F1              POP  AF
-0936   444F C9              ret
-0937   4450             
-0938   4450             
-0939   4450             SENDNIBBLE: ;31 per bit, 134 incl RET 151 incl call, nibble in C lower half
-0940   4450                 ; Four bits to send
-0941   4450                 ;# bit 1 start
-0942   4450 CB 01           RLC C       ; 8
-0943   4452 38 19           JR C, csendH1 ; 12/7
-0944   4454 D8              ret c        ; 11/5 dummy for symmetric timing
-0945   4455                 ;# bit 1 send 0
-0946   4455 DB FE           IN      A,($FE)         ; signal to 0 /on
-0947   4457             
-0948   4457                 ;# bit 2 start
-0949   4457 CB 01           RLC C       ; 8
-0950   4459 38 2A           JR C, csendH2 ; 12/7
-0951   445B D8              ret c        ; 11/5 dummy for symmetric timing
-0952   445C                 ;# bit 2 send 0
-0953   445C DB FE           IN      A,($FE)         ; signal to 0 /on
-0954   445E             
-0955   445E                 ;# bit 3 start
-0956   445E CB 01           RLC C       ; 8
-0957   4460 38 34           JR C, csendH3 ; 12/7
-0958   4462 D8              ret c        ; 11/5 dummy for symmetric timing
-0959   4463                 ;# bit 3 send 0
-0960   4463 DB FE           IN      A,($FE)         ; signal to 0 /on
-0961   4465             
-0962   4465                 ;# bit 4 start
-0963   4465 CB 01           RLC C       ; 8
-0964   4467 38 37           JR C, csendH4 ; 12/7
-0965   4469 D8              ret c        ; 11/5 dummy for symmetric timing
-0966   446A                 ;# bit 4 send 0
-0967   446A DB FE           IN      A,($FE)         ; signal to 0 /on
-0968   446C             
-0969   446C C9              ret
-0970   446D             
-0971   446D             
-0972   446D             csendH1:    ;# bit 1 send 1
-0973   446D D3 FF           OUT     ($FF),A         ; signal to 1 /off
-0974   446F             
-0975   446F                 ;# bit 2 start
-0976   446F CB 01           RLC C       ; 8
-0977   4471 38 12           JR C, csendH2 ; 12/7
-0978   4473 D8              ret c        ; 11/5 dummy for symmetric timing
-0979   4474                 ;# bit 2 send 0
-0980   4474 DB FE           IN      A,($FE)         ; signal to 0 /on
-0981   4476             
-0982   4476                 ;# bit 3 start
-0983   4476 CB 01           RLC C       ; 8
-0984   4478 38 1C           JR C, csendH3 ; 12/7
-0985   447A D8              ret c        ; 11/5 dummy for symmetric timing
-0986   447B                 ;# bit 3 send 0
-0987   447B DB FE           IN      A,($FE)         ; signal to 0 /on
-0988   447D             
-0989   447D                 ;# bit 4 start
-0990   447D CB 01           RLC C       ; 8
-0991   447F 38 1F           JR C, csendH4 ; 12/7
-0992   4481 D8              ret c        ; 11/5 dummy for symmetric timing
-0993   4482                 ;# bit 4 send 0
-0994   4482 DB FE           IN      A,($FE)         ; signal to 0 /on
-0995   4484 C9              ret
-0996   4485             
-0997   4485             csendH2:    ;# bit 2 send 1
-0998   4485 D3 FF           OUT     ($FF),A         ; signal to 1 /off
-0999   4487             
-1000   4487                 ;# bit 3 start
-1001   4487 CB 01           RLC C       ; 8
-1002   4489 38 0B           JR C, csendH3 ; 12/7
-1003   448B D8              ret c        ; 11/5 dummy for symmetric timing
-1004   448C                 ;# bit 3 send 0
-1005   448C DB FE           IN      A,($FE)         ; signal to 0 /on
-1006   448E             
-1007   448E                 ;# bit 4 start
-1008   448E CB 01           RLC C       ; 8
-1009   4490 38 0E           JR C, csendH4 ; 12/7
-1010   4492 D8              ret c        ; 11/5 dummy for symmetric timing
-1011   4493                 ;# bit 4 send 0
-1012   4493 DB FE           IN      A,($FE)         ; signal to 0 /on
-1013   4495 C9              ret
-1014   4496             
-1015   4496             csendH3:    ;# bit 3 send 1
-1016   4496 D3 FF           OUT     ($FF),A         ; signal to 1 /off
-1017   4498             
-1018   4498                 ;# bit 4 start
-1019   4498 CB 01           RLC C       ; 8
-1020   449A 38 04           JR C, csendH4 ; 12/7
-1021   449C D8              ret c        ; 11/5 dummy for symmetric timing
-1022   449D                 ;# bit 4 send 0
-1023   449D DB FE           IN      A,($FE)         ; signal to 0 /on
-1024   449F C9              ret
-1025   44A0             
-1026   44A0             csendH4:    ;# bit 4 send 1
-1027   44A0 D3 FF           OUT     ($FF),A         ; signal to 1 /off
-1028   44A2 C9              ret
-1029   44A3             
-1030   44A3             DRIVER_END:
-1031   44A3             
-1032   44A3 76             db $76   ;N/L 
-1033   44A4             
-1034   44A4             line10:
-1035   44A4 00 0A          db 0,10  ;line number 
-1036   44A6 19 00          dw dfile-$-2  ;line length 
-1037   44A8 F5             db $f5   ;PRINT 
-1038   44A9 D4             db $d4   ;USR 
-1039   44AA 1D             db $1d   ;1 
-1040   44AB 22             db $22   ;6 
-1041   44AC 21             db $21   ;5 
-1042   44AD 1D             db $1d   ;1 
-1043   44AE 20             db $20   ;4 
-1044   44AF 7E             db $7e   ;FP mark 
-1045   44B0 8F             db $8f   ;5 bytes FP number 
-1046   44B1 01             db $01   ; 
-1047   44B2 04             db $04   ; 
-1048   44B3 00             db $00   ; 
-1049   44B4 00             db $00   ; 
-1050   44B5 1A             db $1a   ; ,
-1051   44B6 0B             db $0b   ; "
-1052   44B7 2E             db c_I   ; TTTT2 = QLOAD test
-1053   44B8                ;db c_T   ; SNNN = dummy save for testing
-1054   44B8                ;db c_S   ; STST,1024,100 binsave
-1055   44B8                ;db c_T   ; LTST,1024   binload
-1056   44B8 00             db 0   ; 
-1057   44B9 1D             db c_0+1   ; 
-1058   44BA 1C             db c_0+0   ; 
-1059   44BB 1C             db c_0+0   ; 
-1060   44BC 1C             db c_0+0   ; 
-1061   44BD 1C             db c_0+0   ; 
-1062   44BE             ;   db 26
-1063   44BE             ;   db c_0+1   ; 
-1064   44BE             ;   db c_0+0   ; 
-1065   44BE             ;   db c_0+0   ; 
-1066   44BE 0B             db $0b   ; "
-1067   44BF 76             db $76   ;N/L 
-1068   44C0 76             db $76   ;N/L 
-1069   44C1             
-1070   44C1             
-1071   44C1                
-1072   44C1             ;- Display file -------------------------------------------- 
-1073   44C1              
-1074   44C1             dfile: 
-1075   44C1 76             db $76 
-1076   44C2 3F 3D          db c_Z,c_X,
-1077   44C4 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
-1077   44C8 76 76 76 76 
-1078   44CC 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
-1078   44D0 76 76 76 76 
-1079   44D4 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
-1079   44D8 76 76 76 76 
-1080   44DC              
-1081   44DC             ;- BASIC-Variables ---------------------------------------- 
-1082   44DC              
-1083   44DC             var: 
-1084   44DC 80             db $80 
-1085   44DD              
-1086   44DD             ;- End of program area ---------------------------- 
-1087   44DD             
-1088   44DD             last: 
-1089   44DD              
-1090   44DD                end 
+0124   4082             AA45:
+0125   4082 CD 30 44    	CALL NAME	; get command line arg
+0126   4085 18 1B       	JR BASIC_CONT
+0127   4087 00          	NOP
+0128   4088 00          	NOP
+0129   4089 00          	NOP
+0130   408A             
+0131   408A             CALL_START:	; (IN UFM als START_ADDR+6 festgelegt)
+0132   408A 21 3C 40    	LD HL,UFM_CMDBUF
+0133   408D E5              PUSH HL
+0134   408E                 ;  get length in BC by parsing for '"' or so..
+0135   408E 01 00 00        LD   BC,0
+0136   4091             ENDPRSLP:
+0137   4091 7E              LD   A,(HL)
+0138   4092 FE 0B           CP   11     ; is " ?
+0139   4094 28 04           JR   Z, EXITPRSLP
+0140   4096 03              INC  BC
+0141   4097 23              INC  HL
+0142   4098 18 F7           JR   ENDPRSLP
+0143   409A             EXITPRSLP:
+0144   409A E1              POP  HL ; original pointer
+0145   409B             AA44:
+0146   409B CD BA 40    	CALL GENER_START
+0147   409E 32 32 40    	LD (UFM_ERRNO),A
+0148   40A1 C9          	RET
+0149   40A2             
+0150   40A2             BASIC_CONT:
+0151   40A2             AA01:
+0152   40A2 CD BA 40    	CALL GENER_START ; A is 0 for ok, !=0 for error
+0153   40A5 A7          	AND A
+0154   40A6 28 0F       	JR Z,BAS_OK
+0155   40A8 3E 2A       	LD A,c_E		; Ausgabe ERR
+0156   40AA D7          	RST 10h 
+0157   40AB 3E 37       	LD A,c_R
+0158   40AD D7          	RST 10h
+0159   40AE 3E 37           LD A,c_R
+0160   40B0 D7          	RST 10h
+0161   40B1 3E 76           LD A,c_NEWLINE
+0162   40B3 D7          	RST 10h
+0163   40B4                 ; exit
+0164   40B4 AF              XOR A
+0165   40B5 CF          	RST 08h
+0166   40B6 09              db  09h             ; Error Report: Invalid argument
+0167   40B7             	;db 0FFh
+0168   40B7             
+0169   40B7             BAS_OK:
+0170   40B7             	; RET  ; TODO check if RET or better RST8 with -1
+0171   40B7 AF              XOR A		; sonst zurueck nach BASIC
+0172   40B8 CF          	RST 08h
+0173   40B9 FF          	db 0FFh
+0174   40BA             	
+0175   40BA             
+0176   40BA             GENER_START: ; Interpreting the string independent of its origin, on ret A=0 for okay, BC retval to basic
+0177   40BA 7E          	LD A,(HL)   ; HL=start, BC=length
+0178   40BB 23              INC  HL
+0179   40BC 0B              DEC  BC
+0180   40BD             AA00:
+0181   40BD 11 E0 40        LD   DE,GENER_END
+0182   40C0 D5              PUSH DE     ; ret adddess
+0183   40C1             ;	CP c_I		; Info
+0184   40C1             ;	JP Z,INFO1
+0185   40C1 FE 38       	CP c_S		; Save
+0186   40C3             AA41:
+0187   40C3 CA 9C 42    	JP Z,SAVE1
+0188   40C6 FE 31       	CP c_L		; Load
+0189   40C8             AA42:
+0190   40C8 CA CD 41    	JP Z,LOAD1
+0191   40CB             ;	CP 29h		; ist es ein D;
+0192   40CB             ;	JP Z,DIR1
+0193   40CB             ;	CP 3Bh		; ist es ein V (UFM)
+0194   40CB             ;	JP Z,DIRV1
+0195   40CB             ;	CP 30h		; ist es ein K (UFM)
+0196   40CB             ;	JP Z,DIRK1
+0197   40CB             ;	CP 37h		; ist es ein R
+0198   40CB             ;	JP Z,RENAM1
+0199   40CB             ;	CP 2Ah		; ist es ein E
+0200   40CB             ;	JP Z,ERAS1
+0201   40CB FE 2E       	CP c_I		;  I
+0202   40CD             AA02:
+0203   40CD CA E8 40    	JP Z,INST_RELOC
+0204   40D0 FE 39       	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
+0205   40D2             AA43:
+0206   40D2 CA 70 42    	JP Z,TESTPATTERN
+0207   40D5 FE 2D       	CP c_H		; Help
+0208   40D7             AA03:
+0209   40D7 CA 9B 43    	JP Z,HLP
+0210   40DA FE 0F       	CP 0Fh		; ist es ein ?
+0211   40DC             AA04:
+0212   40DC CA 9B 43    	JP Z,HLP
+0213   40DF C9              ret 
+0214   40E0             
+0215   40E0             GENER_END:
+0216   40E0 F5              PUSH AF ; holds our error status
+0217   40E1 C5              PUSH BC ; ret value...
+0218   40E2 CD 07 02    	CALL SHOW
+0219   40E5 C1              POP  BC
+0220   40E6 F1              POP  AF
+0221   40E7 C9          	RET
+0222   40E8             	
+0223   40E8             INST_RELOC:
+0224   40E8                 ; address with new memory location follows. Cpoies the driver and corrects the absolute adresses accordingly
+0225   40E8             AA09:
+0226   40E8 CD 31 42        CALL PARS_DEC_NUM   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+0227   40EB 3E 01           LD   A,1
+0228   40ED C0              RET  NZ
+0229   40EE D5              PUSH DE
+0230   40EF CD E7 02    	CALL FAST	; go to fast mode so we can use index regs
+0231   40F2 D1              POP  DE
+0232   40F3 DD E5           PUSH IX     ; save IX till end
+0233   40F5 D5              PUSH DE
+0234   40F6 DD E1           POP  IX     ; new start addr in IX, will need it quite often
+0235   40F8                 ; copy RAW driver
+0236   40F8             AA06:
+0237   40F8 21 82 40        LD HL,DRIVER_START
+0238   40FB 01 75 04        LD BC,DRIVER_END-DRIVER_START
+0239   40FE ED B0           LDIR
+0240   4100                 ; correct abs addr occurrences, all in this table:
+0241   4100             AA07:
+0242   4100 21 47 41        LD HL, RELOC_TABLE
+0243   4103             RLCLOOP:
+0244   4103 5E              LD   E,(HL)
+0245   4104 23              INC  HL
+0246   4105 56              LD   D,(HL)
+0247   4106 23              INC  HL
+0248   4107 7A              LD   A,D
+0249   4108 B3              OR  E
+0250   4109 28 1C           JR   Z, ENDRLCCP    ; null end marker
+0251   410B E5              PUSH HL ; next RELOC_TABLE pos
+0252   410C                 ; DE is position of the addr tag relative to start
+0253   410C DD E5           PUSH IX
+0254   410E E1              POP  HL
+0255   410F 19              ADD  HL,DE
+0256   4110                 ; HL is the absolute label pos to modify
+0257   4110 E5              PUSH HL ; need it later to write
+0258   4111 5E              LD   E,(HL) 
+0259   4112 23              INC  HL
+0260   4113 56              LD   D,(HL)
+0261   4114             AA05:
+0262   4114 21 82 40        LD   HL, DRIVER_START
+0263   4117 EB              EX   DE,HL
+0264   4118 A7          	AND A		; clear carry
+0265   4119 ED 52       	SBC HL,DE	; actual address minus old offset
+0266   411B             
+0267   411B                 ; HL is relative addr
+0268   411B DD E5           PUSH IX
+0269   411D D1              POP  DE
+0270   411E 19              ADD  HL,DE  ; add new offset
+0271   411F EB              EX   DE,HL
+0272   4120                 ; DE is new abs addr
+0273   4120 E1              POP  HL
+0274   4121 73              LD   (HL),E
+0275   4122 23              INC  HL
+0276   4123 72              LD   (HL),D
+0277   4124 E1              POP HL ; restore RELOC_TABLE pos
+0278   4125 18 DC           JR RLCLOOP
+0279   4127             ENDRLCCP:
+0280   4127 DD E1           POP  IX
+0281   4129 AF              XOR  A
+0282   412A 01 75 04        LD   BC,DRIVER_END-DRIVER_START
+0283   412D C9              RET
+0284   412E              
+0285   412E             
+0286   412E             PRINTHEX:
+0287   412E F5          	PUSH AF
+0288   412F E5          	PUSH HL
+0289   4130 C5          	PUSH BC
+0290   4131 4F          	LD C,A		; SAVE
+0291   4132 CB 3F       	SRL A
+0292   4134 CB 3F       	SRL A
+0293   4136 CB 3F       	SRL A
+0294   4138 CB 3F       	SRL A
+0295   413A C6 1C       	ADD A,1CH	; Offset to '0'
+0296   413C D7          	RST 10H
+0297   413D 79          	LD A,C
+0298   413E E6 0F       	AND	0FH		; MASK
+0299   4140 C6 1C       	ADD A,1CH	; Offset to '0'
+0300   4142 D7          	RST 10H
+0301   4143 C1          	POP BC
+0302   4144 E1          	POP HL
+0303   4145 F1          	POP AF
+0304   4146 C9          	RET
+0305   4147             
+0306   4147             
+0307   4147             RELOC_TABLE:
+0308   4147              ;   dw 0
+0309   4147 3C 00           dw AA00+1-DRIVER_START
+0310   4149 21 00           dw AA01+1-DRIVER_START
+0311   414B 4C 00           dw AA02+1-DRIVER_START
+0312   414D 56 00           dw AA03+1-DRIVER_START
+0313   414F 5B 00           dw AA04+1-DRIVER_START
+0314   4151 93 00           dw AA05+1-DRIVER_START
+0315   4153 77 00           dw AA06+1-DRIVER_START
+0316   4155 7F 00           dw AA07+1-DRIVER_START
+0317   4157 1A 03           dw AA08+1-DRIVER_START
+0318   4159 67 00           dw AA09+1-DRIVER_START
+0319   415B             
+0320   415B 4E 01           dw AA10+1-DRIVER_START
+0321   415D 5B 01           dw AA11+1-DRIVER_START
+0322   415F 5E 01           dw AA12+1-DRIVER_START
+0323   4161 6A 01           dw AA13+1-DRIVER_START
+0324   4163 73 01           dw AA14+1-DRIVER_START
+0325   4165 7F 01           dw AA15+1-DRIVER_START
+0326   4167 89 01           dw AA16+1-DRIVER_START
+0327   4169 A6 01           dw AA17+1-DRIVER_START
+0328   416B F1 01           dw AA18+1-DRIVER_START
+0329   416D FC 01           dw AA19+1-DRIVER_START
+0330   416F             
+0331   416F 05 02           dw AA20+1-DRIVER_START
+0332   4171 1D 02           dw AA21+1-DRIVER_START
+0333   4173 27 02           dw AA22+1-DRIVER_START
+0334   4175 3C 02           dw AA23+1-DRIVER_START
+0335   4177 46 02           dw AA24+1-DRIVER_START
+0336   4179 54 02           dw AA25+1-DRIVER_START
+0337   417B 62 02           dw AA26+1-DRIVER_START
+0338   417D 65 02           dw AA27+1-DRIVER_START
+0339   417F 71 02           dw AA28+1-DRIVER_START
+0340   4181 79 02           dw AA29+1-DRIVER_START
+0341   4183             
+0342   4183 46 03           dw AA30+1-DRIVER_START
+0343   4185 50 03           dw AA31+1-DRIVER_START
+0344   4187 82 03           dw AA32+1-DRIVER_START
+0345   4189 85 03           dw AA33+1-DRIVER_START
+0346   418B 8F 03           dw AA34+1-DRIVER_START
+0347   418D DD 03           dw AA35+1-DRIVER_START
+0348   418F E9 03           dw AA36+1-DRIVER_START
+0349   4191 F5 03           dw AA37+1-DRIVER_START
+0350   4193 01 04           dw AA38+1-DRIVER_START
+0351   4195 0D 04           dw AA39+1-DRIVER_START
+0352   4197             
+0353   4197 19 04           dw AA40+1-DRIVER_START
+0354   4199 42 00           dw AA41+1-DRIVER_START
+0355   419B 47 00           dw AA42+1-DRIVER_START
+0356   419D 51 00           dw AA43+1-DRIVER_START
+0357   419F 1A 00           dw AA44+1-DRIVER_START
+0358   41A1 01 00           dw AA45+1-DRIVER_START
+0359   41A3 00 00           dw 0    ; final
+0360   41A5             
+0361   41A5             
+0362   41A5             
+0363   41A5             CHECKCOMMA:  ; Z is set when comma seperator found in string, NZ if not, uses A
+0364   41A5                 ; BC =0?
+0365   41A5 AF              XOR  A
+0366   41A6 B9              CP   C
+0367   41A7 20 02           JR   NZ,CHKK_CONT
+0368   41A9 3C              INC  A ; clear the Z flag
+0369   41AA C9              RET     ; no match till end
+0370   41AB             CHKK_CONT:
+0371   41AB 7E              LD   A, (HL)
+0372   41AC FE 1A           CP   26     ; comma
+0373   41AE C8              RET  z
+0374   41AF FE 19           CP   25     ; also check for semicolon
+0375   41B1 C8              RET  z
+0376   41B2 23              INC  HL
+0377   41B3 0B              DEC  BC
+0378   41B4 18 EF           JR CHECKCOMMA
+0379   41B6             
+0380   41B6             
+0381   41B6             SKIPEMPTY:  ; Z is set when comma seperator found in string, NZ if not, uses A
+0382   41B6                 ; BC =0?
+0383   41B6 AF              XOR  A
+0384   41B7 B9              CP   C
+0385   41B8 20 05           JR   NZ,CHKE_CONT
+0386   41BA B8              CP   B
+0387   41BB 20 02           JR   NZ,CHKE_CONT
+0388   41BD 3C              INC  A ; clear the Z flag
+0389   41BE C9              RET     ; no match till end
+0390   41BF             CHKE_CONT:
+0391   41BF BE              CP   (HL)
+0392   41C0 C0              RET  NZ ; not empty,leave
+0393   41C1 23              INC  HL
+0394   41C2 0B              DEC  BC
+0395   41C3 18 F1           JR SKIPEMPTY
+0396   41C5             
+0397   41C5             PRINTA:
+0398   41C5 E5              PUSH HL
+0399   41C6 D5              PUSH DE
+0400   41C7 C5              PUSH BC
+0401   41C8 D7              RST 10H
+0402   41C9 C1              POP  BC
+0403   41CA D1              POP  DE
+0404   41CB E1              POP  HL
+0405   41CC C9              RET
+0406   41CD                 
+0407   41CD             
+0408   41CD             LOAD1:
+0409   41CD             	; HL points to arg string, BC number of chars
+0410   41CD E5              PUSH HL  ; orig pos of args (w/o prefix T)
+0411   41CE C5              PUSH BC  ; orig lenght of args (w/o prefix T)
+0412   41CF                 ; Check if we have contact
+0413   41CF             AA10:    
+0414   41CF CD C7 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
+0415   41D2 A7              AND A
+0416   41D3                 ; Send LOAD request
+0417   41D3 C1              POP  BC
+0418   41D4 E1              POP  HL ; recover name pointer/length
+0419   41D5 28 4B           JR   Z, LD_ERR ; NO CONTACT after TRY_HANDSHAKE
+0420   41D7 E5              PUSH HL  ; and again store for binload
+0421   41D8 C5              PUSH BC  ; 
+0422   41D9             
+0423   41D9 41              ld   B,C ; length, assume <256
+0424   41DA 0E 5D           ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
+0425   41DC             AA11:
+0426   41DC CD 44 44        CALL SEND_PACKET
+0427   41DF             
+0428   41DF                 ; now retrieve key, must be 123
+0429   41DF             AA12:
+0430   41DF CD 16 44        CALL QLD_GETBYTE    ; uses BC D, result in A
+0431   41E2 FE 7B           CP  123
+0432   41E4 20 3A           JR NZ,LD_ERR2
+0433   41E6 06 04           LD   B,4
+0434   41E8 7E              LD  A,(HL)  ; dummy for timing
+0435   41E9              
+0436   41E9             LOADELY1:         ;    //47 delay between the header bytes
+0437   41E9 10 FE           DJNZ LOADELY1
+0438   41EB             
+0439   41EB                 ; now retrieve length, 0 for error
+0440   41EB             AA13:
+0441   41EB CD 16 44        CALL QLD_GETBYTE    ; uses BC D, result in A
+0442   41EE 6F              LD   L,A
+0443   41EF 06 05           LD   B,5
+0444   41F1             
+0445   41F1             LOADELY2:         ;    //60 delay between the length bytes
+0446   41F1 10 FE           DJNZ LOADELY2
+0447   41F3             
+0448   41F3 00              NOP
+0449   41F4             AA14:
+0450   41F4 CD 16 44        CALL QLD_GETBYTE    ; uses BC D, result in A
+0451   41F7 67              LD   H,A
+0452   41F8 B5              OR   L
+0453   41F9 28 25           JR Z,LD_ERR2
+0454   41FB EB              EX   DE,HL
+0455   41FC                 ; Here we have DE= len
+0456   41FC                 ; get addr
+0457   41FC C1              POP  BC
+0458   41FD E1              POP  HL ; recover name pointer/length
+0459   41FE D5              PUSH DE             ; length, will go to BC below
+0460   41FF D5              PUSH DE             ; length, again, for end result
+0461   4200             
+0462   4200             
+0463   4200                 ;  test if saving binary or regular basic
+0464   4200             AA15:
+0465   4200 CD A5 41        CALL CHECKCOMMA
+0466   4203 28 20           JR   Z, BINLOAD
+0467   4205             
+0468   4205                 ; LOAD BASIC program if not BINLOAD, set addr
+0469   4205 21 09 40    	LD HL,4009h		; 
+0470   4208 1E 01           LD   E,1        ; mark as basic load
+0471   420A             
+0472   420A             LOADLOOP:
+0473   420A                 ; timing  - 74 between calls seems to be more reliable than 70!
+0474   420A             AA16:
+0475   420A CD 16 44        CALL QLD_GETBYTE    ; uses BC D, result in A
+0476   420D 77              LD   (HL),A
+0477   420E 77              LD   (HL),A ; dummy for timing
+0478   420F 23              INC  HL
+0479   4210 C1              POP  BC     ; get remaining length
+0480   4211 0B              DEC  BC
+0481   4212 79              LD   A,C
+0482   4213 B0              OR   B
+0483   4214 28 03           JR Z, LD_END
+0484   4216 C5              PUSH BC
+0485   4217 18 F1           JR  LOADLOOP
+0486   4219             LD_END:  
+0487   4219 C1              POP  BC ; orig length
+0488   421A AF              XOR  A
+0489   421B BB              CP   E  ; 0 for binary
+0490   421C C8              RET   Z ; normal return for binload with length in BC
+0491   421D                 ; end for BASIC loader
+0492   421D D1              POP  DE ; dummy, ret addr
+0493   421E CF          	RST 08h ;
+0494   421F FF          	db 0FFh
+0495   4220             
+0496   4220             
+0497   4220             LD_ERR2:
+0498   4220 D1              POP  DE ; dummy
+0499   4221 D1              POP  DE ; dummy
+0500   4222             LD_ERR:
+0501   4222 3E 01           LD   A,1
+0502   4224 C9              RET ; BC WILL be at maximum now
+0503   4225             
+0504   4225             
+0505   4225             
+0506   4225             BINLOAD: ; HL points to the comma in arg string, now parse addr, length
+0507   4225 23              INC  HL
+0508   4226 0D              DEC  C
+0509   4227             AA17:
+0510   4227 CD 31 42        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+0511   422A 20 F4           JR NZ, LD_ERR2   ; parse error
+0512   422C                 ; addr in DE
+0513   422C EB              EX   DE,HL
+0514   422D 1E 00           LD   E,0    ; mark as binary
+0515   422F 18 D9           JR LOADLOOP
+0516   4231             
+0517   4231             
+0518   4231             
+0519   4231             ; parse a decimal number
+0520   4231             PARS_DEC_NUM:   ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+0521   4231 11 00 00    	LD DE, 0
+0522   4234 AF              XOR  A
+0523   4235 B9              CP   C
+0524   4236 28 35           JR Z,PARSFAIL
+0525   4238             
+0526   4238             PARS_LLOOP:     ; look for first number
+0527   4238 7E          	LD A,(HL)
+0528   4239 A7          	AND A
+0529   423A 28 29       	JR Z, PARS_SKIPWS ; skip whitespace
+0530   423C             PARS_LLP2:
+0531   423C D6 1C       	SUB 01ch	;"0"
+0532   423E 38 2D       	JR C,PARSFAIL
+0533   4240 FE 0A       	CP 10
+0534   4242 30 29       	JR NC,PARSFAIL
+0535   4244             	; have a digit in A,
+0536   4244 E5          	PUSH HL
+0537   4245             	; DE times ten
+0538   4245 62          	LD H,D      ; now in both HL and DE
+0539   4246 6B          	LD L,E
+0540   4247 29          	ADD HL,HL
+0541   4248 29          	ADD HL,HL
+0542   4249 29          	ADD HL,HL ; times 8 so far
+0543   424A 19          	ADD HL,DE
+0544   424B 19          	ADD HL,DE
+0545   424C             	; Add new digit
+0546   424C 16 00       	LD D,0
+0547   424E 5F          	LD E,A
+0548   424F 19          	ADD HL,DE
+0549   4250 EB          	EX DE,HL    ; new value of DE
+0550   4251 E1          	POP HL  ; pointer to argline back in HL
+0551   4252 23          	INC HL
+0552   4253 0D          	DEC C
+0553   4254 28 15           JR Z,PARSDONE
+0554   4256 7E          	LD A,(HL)   ; load next char to see if end
+0555   4257 FE 1A           CP   26 ;  ','
+0556   4259 28 10           JR Z,PARSDONE
+0557   425B FE 0E           CP   14 ;  ';'
+0558   425D 28 0C           JR Z,PARSDONE
+0559   425F FE 0B           CP   11 ;  '"'
+0560   4261 28 08           JR Z,PARSDONE
+0561   4263 18 D7       	JR PARS_LLP2 
+0562   4265             PARS_SKIPWS:
+0563   4265 23          	INC HL
+0564   4266 0D          	DEC C
+0565   4267 28 04           JR Z,PARSFAIL
+0566   4269 18 CD       	JR PARS_LLOOP 
+0567   426B             
+0568   426B             PARSDONE:
+0569   426B AF              XOR  A
+0570   426C C9          	RET
+0571   426D             PARSFAIL:
+0572   426D AF              XOR  A
+0573   426E 3C              INC  A
+0574   426F C9          	RET
+0575   4270             
+0576   4270             
+0577   4270             TESTPATTERN:
+0578   4270             	; HL points to arg string, BC number of chars
+0579   4270 E5              PUSH HL  ; orig pos of args (w/o prefix T)
+0580   4271 C5              PUSH BC  ; orig lenght of args (w/o prefix T)
+0581   4272                 ; Check if we have contact
+0582   4272             AA18:    
+0583   4272 CD C7 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
+0584   4275 A7              AND A
+0585   4276                 ; Send LOAD request
+0586   4276 C1              POP  BC
+0587   4277 E1              POP  HL ; recover name pointer/length
+0588   4278 28 1C           JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
+0589   427A             
+0590   427A 41              ld   B,C ; length, assume <256
+0591   427B 0E 5D           ld   C,93 ; packet ID ZX_QSAVE_TAG_LOADPFILE
+0592   427D             AA19:
+0593   427D CD 44 44        CALL SEND_PACKET
+0594   4280             
+0595   4280                 ; now retrieve 1024 bytes and see how many are correct
+0596   4280                 ; gap between byte calls should be 77+12+7 - 17-10 = 69 clocks
+0597   4280 01 00 00        LD   BC,0
+0598   4283             TESTBLOOP:
+0599   4283 C5              PUSH BC
+0600   4284 00              NOP         ; timing adjust 66/70
+0601   4285 00              NOP         ; timing adjust 70/74 - 74 seems to be more reliable than 70!
+0602   4286             AA20:
+0603   4286 CD 16 44        CALL QLD_GETBYTE    ; uses BC D, result in A
+0604   4289 C1              POP  BC
+0605   428A B9              CP   C  ; incomming data in A is 0,1,2,3,4...255,0,1... as byte
+0606   428B 3E 00           LD   A,0 ; not affect flags, test never reports errors to better automatize
+0607   428D C0              RET  NZ ; report BC at point of first failure
+0608   428E 03              INC  BC
+0609   428F 3E 10           LD   A,16 ; 4kbyte testsize
+0610   4291 B8              CP   B
+0611   4292 20 EF           JR   NZ, TESTBLOOP
+0612   4294 AF              XOR  A
+0613   4295 C9              RET ; BC WILL be at maximum now
+0614   4296             
+0615   4296             
+0616   4296             
+0617   4296             ERREXIT:
+0618   4296 3E 01           LD   A,1
+0619   4298 01 00 00        LD   BC,0
+0620   429B C9              RET
+0621   429C             
+0622   429C             SAVE1:
+0623   429C             	; HL points to arg string, BC number of chars
+0624   429C E5              PUSH HL  ; orig pos of args (w/o prefix S)
+0625   429D C5              PUSH BC  ; orig lenght of args (w/o prefix S)
+0626   429E             
+0627   429E             
+0628   429E             ;    LD   A, c_S
+0629   429E             ;    CALL PRINTA
+0630   429E             
+0631   429E                 ; Check if we have contact
+0632   429E             AA21:   
+0633   429E CD C7 43        CALL TRY_HANDSHAKE  ; See if WESPI responds, return 1 if so, 0 for timeout
+0634   42A1                 ; Send SAVE request
+0635   42A1 C1              POP  BC
+0636   42A2 E1              POP  HL ; recover name pointer/length
+0637   42A3                 ; evauate connect result
+0638   42A3 A7              AND A
+0639   42A4 28 F0           JR   Z, ERREXIT ; NO CONTACT after TRY_HANDSHAKE
+0640   42A6             
+0641   42A6                 ; again store original argument string, will need it now and when sending name
+0642   42A6 E5              PUSH HL
+0643   42A7 C5              PUSH BC
+0644   42A8             
+0645   42A8                 ;  test if saving binary or regular basic
+0646   42A8             AA22:
+0647   42A8 CD A5 41        CALL CHECKCOMMA
+0648   42AB 28 43           JR   Z, BINSAVE
+0649   42AD             
+0650   42AD                 ; SAVE BASIC program if not BINSAVE, pre-calc addr,size into HL and BC
+0651   42AD 11 09 40    	LD DE,4009h		; Get length
+0652   42B0 2A 14 40    	LD HL,(ELINE)	
+0653   42B3 A7          	AND A		; clear carry
+0654   42B4 ED 52       	SBC HL,DE	; HL=length
+0655   42B6 44          	LD B,H
+0656   42B7 4D          	LD C,L
+0657   42B8 EB          	EX DE,HL	; Now HL=Start, BC=length
+0658   42B9             
+0659   42B9             SAVE_CONT: ;continue common path of BIN and BASIC save
+0660   42B9 D9              EXX     ; store payload addr and length for now
+0661   42BA EB          	EX DE,HL	; HL' must be restored, save in DE'
+0662   42BB C1              POP  BC
+0663   42BC E1              POP  HL ; recover name pointer/length
+0664   42BD             AA23:
+0665   42BD CD B6 41        CALL SKIPEMPTY 
+0666   42C0 AF              XOR  A
+0667   42C1 B9              CP   C
+0668   42C2 28 40           JR   Z, ERREXIT3 ; NO NAME
+0669   42C4 41              ld   B,C ; length, assume <256
+0670   42C5 0E 5B           ld   C,91 ; packet ID ZX_QSAVE_TAG_SAVEPFILE
+0671   42C7             AA24:
+0672   42C7 CD 44 44        CALL SEND_PACKET
+0673   42CA EB          	EX DE,HL	; HL' must be restored, was saved in DE'
+0674   42CB D9              EXX ; Recover, now HL=Start, BC=length
+0675   42CC             	
+0676   42CC             SVSENDFUL:
+0677   42CC AF              XOR  A
+0678   42CD B8              CP   B
+0679   42CE 28 0C           JR   Z, SVSENDLAST
+0680   42D0                 ; send full packets
+0681   42D0 C5              PUSH BC
+0682   42D1 06 00           LD   B,0    ; 256 bytes
+0683   42D3 0E 5F           LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
+0684   42D5             AA25:
+0685   42D5 CD 44 44        CALL SEND_PACKET
+0686   42D8 C1              POP  BC
+0687   42D9 05              DEC  B
+0688   42DA 18 F0           JR   SVSENDFUL
+0689   42DC             
+0690   42DC             SVSENDLAST:
+0691   42DC AF              XOR  A
+0692   42DD B9              CP   C
+0693   42DE 28 06           JR   Z, SVSENDEND
+0694   42E0 41              LD   B,C ; length
+0695   42E1 0E 5F           LD   C,95 ; packet ID ZX_QSAVE_TAG_DATA
+0696   42E3             AA26:
+0697   42E3 CD 44 44        CALL SEND_PACKET
+0698   42E6             
+0699   42E6             SVSENDEND:
+0700   42E6             AA27:
+0701   42E6 CD FC 43        CALL QS_FINAL_ACK   ; Z set for success
+0702   42E9 20 AB           JR   NZ, ERREXIT
+0703   42EB AF              XOR  A
+0704   42EC 01 01 00        LD   BC, 1
+0705   42EF C9          	RET
+0706   42F0             
+0707   42F0             
+0708   42F0             BINSAVE: ; HL points to the comma in arg string, now parse addr, length
+0709   42F0 23              INC  HL
+0710   42F1 0D              DEC  C
+0711   42F2             AA28:
+0712   42F2 CD 31 42        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+0713   42F5 20 13           JR NZ, BSERREXIT   ; parse error
+0714   42F7 D5              PUSH DE ; store addr, from now on have to use BSERREXIT2 to stack-unwind here
+0715   42F8 23              INC  HL
+0716   42F9 0D              DEC  C
+0717   42FA             AA29:
+0718   42FA CD 31 42        CALL PARS_DEC_NUM ; HL points to char in arg line, C holds remaining ARG size, return dec in DE, uses AF, Z set when okay
+0719   42FD 20 0A           JR NZ, BSERREXIT2   ; parse error
+0720   42FF                 ; length in DE
+0721   42FF                 ; Now put HL=Start, BC=length
+0722   42FF 42              LD   B,D
+0723   4300 4B              LD   C,E
+0724   4301 E1              POP  HL
+0725   4302 18 B5           JR SAVE_CONT
+0726   4304             
+0727   4304             ERREXIT3:
+0728   4304 EB          	EX DE,HL	; HL' must be restored, saved in DE'
+0729   4305 D9              EXX ; Recover
+0730   4306 3E 01           LD   A,1
+0731   4308 C9          	RET
+0732   4309             
+0733   4309             BSERREXIT2:
+0734   4309 D1              POP  DE
+0735   430A             BSERREXIT:
+0736   430A C1              POP  BC
+0737   430B E1              POP  HL ; recover name pointer/length
+0738   430C 3E 01           LD   A,1
+0739   430E C9          	RET
+0740   430F             
+0741   430F             
+0742   430F             HLPTXT:
+0743   430F 3F 3D 00 3C 	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,0, c_0,27,c_0+1,c_0,c_0+1,c_NEWLINE
+0743   4313 2A 38 35 2E 
+0743   4317 00 29 37 2E 
+0743   431B 3B 2A 37 00 
+0743   431F 1C 1B 1D 1C 
+0743   4323 1D 76 
+0744   4325 76              db c_NEWLINE
+0745   4326             ;	db "INFO  ",22h,"I",22h,0dh
+0746   4326             ;	db "DIR   ",22h,"D",22h,0dh
+0747   4326             ;	db "ERASE ",22h,"ENAME.P",22h,0dh
+0748   4326             ;	db "MKDIR ",22h,"DMVERZ",22h,0dh
+0749   4326             ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
+0750   4326             ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
+0751   4326 31 34 26 29 	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
+0751   432A 00 00 00 0B 
+0751   432E 31 33 26 32 
+0751   4332 2A 0B 76 
+0752   4335 38 26 3B 2A 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+0752   4339 00 00 00 0B 
+0752   433D 38 33 26 32 
+0752   4341 2A 0B 76 
+0753   4344 27 31 34 26 	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
+0753   4348 29 00 00 0B 
+0753   434C 31 33 26 32 
+0753   4350 2A 1A 26 29 
+0753   4354 29 37 0B 76 
+0754   4358 27 38 26 3B 	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
+0754   435C 2A 00 00 0B 
+0754   4360 38 33 26 32 
+0754   4364 2A 1A 26 29 
+0754   4368 29 37 1A 31 
+0754   436C 2A 33 0B 76 
+0755   4370             ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
+0756   4370             ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
+0757   4370 76              db c_NEWLINE
+0758   4371 2E 33 38 39 	db c_I,c_N,c_S,c_T,c_A,c_L,c_L, 0 , c_D,c_R,c_V, 0 ,c_T,c_O, 0, c_R,c_A,c_M,  0, 11, c_I, 0, c_A, c_D, c_D, c_R,  11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+0758   4375 26 31 31 00 
+0758   4379 29 37 3B 00 
+0758   437D 39 34 00 37 
+0758   4381 26 32 00 0B 
+0758   4385 2E 00 26 29 
+0758   4389 29 37 0B 76 
+0759   438D             ;	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
+0760   438D 76              db c_NEWLINE
+0761   438E 2D 2A 31 35 	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
+0761   4392 00 00 00 0B 
+0761   4396 2D 0B 76 
+0762   4399             ;	db "FOR SIGGI'S UFM :V/R/K",0dh
+0763   4399 76              db c_NEWLINE
+0764   439A FF          	db $ff
+0765   439B             
+0766   439B             
+0767   439B             ; === Subroutine print help text ====
+0768   439B             AA08:
+0769   439B 21 0F 43    HLP:	LD HL,HLPTXT
+0770   439E 7E          HLP1:	LD A,(HL)
+0771   439F FE FF       	CP $FF
+0772   43A1 28 04       	JR Z, EXITHLP
+0773   43A3 D7              RST 10H
+0774   43A4 23          	INC HL
+0775   43A5 18 F7       	JR HLP1
+0776   43A7             EXITHLP:
+0777   43A7 01 2A 00        LD   BC,42
+0778   43AA AF              XOR  A
+0779   43AB C9              RET
+0780   43AC             
+0781   43AC             
+0782   43AC             
+0783   43AC             GO_QSAVE_MODE:
+0784   43AC CD E7 02    	CALL FAST	; go to fast mode
+0785   43AF DB FE           IN      A,($FE)         ; signal to 0 pause    
+0786   43B1 06 C8           LD B,200  ; 200=200ms Pause
+0787   43B3 C5          W1: push BC
+0788   43B4 06 00           ld b,0
+0789   43B6             W2:
+0790   43B6 10 FE           djnz W2     ; 1 millisec (256*4)
+0791   43B8 C1              pop BC
+0792   43B9 10 F8           djnz W1
+0793   43BB 1E 4B           LD E, 75    ; ID for ZX_SAVE_TAG_QSAVE_START
+0794   43BD CD 1F 03        CALL $031F  ; SAVE byte in E
+0795   43C0 D3 FF           OUT     ($FF),A         ; ; signal to 1 / syncoff, send hsyncs
+0796   43C2 06 00           ld b,0
+0797   43C4             W4:
+0798   43C4 10 FE           djnz W4     ; 1 millisec (256*4) to go to QSAVE mode
+0799   43C6 C9              RET
+0800   43C7             
+0801   43C7             TRY_HANDSHAKE:  ; See if WESPI responds, return 1 if so, 0 for timeout
+0802   43C7             AA30:
+0803   43C7 CD AC 43        CALL GO_QSAVE_MODE
+0804   43CA 21 04 40        ld   hl, 16388 ; RAMTOP
+0805   43CD 06 02           ld   B,2
+0806   43CF 0E 5A           ld   C,90 ; packet ID ZX_QSAVE_TAG_HANDSHAKE
+0807   43D1             AA31:
+0808   43D1 CD 44 44        CALL SEND_PACKET
+0809   43D4 06 B5           ld   b,181  ; timeout, 500ms (inner loop 3.15ms)
+0810   43D6             HS_LOOP1:
+0811   43D6 C5              PUSH BC
+0812   43D7 06 00           LD   B,0
+0813   43D9             HS_LOOP2:                  ; 35 cycles=10.7us, inner Loop 2.75 millisec
+0814   43D9 DB FE           in a,($FE)  ; 11
+0815   43DB 17              rla         ; 4
+0816   43DC 38 0E           jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
+0817   43DE 10 F9           DJNZ HS_LOOP2 ;13
+0818   43E0                 ; re-check here to not have a blind spot for outer loop
+0819   43E0 DB FE           in a,($FE)  ; 11
+0820   43E2 17              rla         ; 4
+0821   43E3 38 07           jr c,HS_FOUND ; 12 / 7  (D7=0 is low level, wait for high)
+0822   43E5 D3 FF           OUT     ($FF),A  ; signal to 1 / syncoff in between to not let levels drift (not good for follow-up cmds?)
+0823   43E7 C1              POP  BC
+0824   43E8 10 EC           DJNZ HS_LOOP1
+0825   43EA                 ; no signal found
+0826   43EA AF              XOR  A
+0827   43EB C9              RET
+0828   43EC             
+0829   43EC             HS_FOUND
+0830   43EC D3 FF           OUT     ($FF),A  ; signal to 1 / syncoff
+0831   43EE                 ; let the output recover with active signal after being low from input. takes about 1ms as seen in oscilloscope
+0832   43EE 06 00           LD   B,0
+0833   43F0             HS_FINALDELAY: ; 3ms here before next cmd
+0834   43F0 7E              LD   A,(HL)
+0835   43F1 7E              LD   A,(HL)
+0836   43F2 7E              LD   A,(HL)    
+0837   43F3 7E              LD   A,(HL)    
+0838   43F4 10 FA           DJNZ HS_FINALDELAY
+0839   43F6 C1              POP  BC
+0840   43F7 3E 01           LD   A,1
+0841   43F9 A7              AND  A
+0842   43FA C9              RET
+0843   43FB             
+0844   43FB             QS_FINAL_SZ:
+0845   43FB 00              db 0 ; size of return packet to request, use smallest possible
+0846   43FC             
+0847   43FC             QS_FINAL_ACK:  ; Get info is operation was sussessful (Z) or failed (NZ), USES BC DE HL, A
+0848   43FC 21 FB 43        ld   hl, QS_FINAL_SZ ; Requested length
+0849   43FF 06 01           ld   B,1
+0850   4401 0E 63           LD   C,99 ; packet ID ZX_QSAVE_TAG_END_RQ
+0851   4403             AA32:
+0852   4403 CD 44 44        CALL SEND_PACKET
+0853   4406             
+0854   4406                 ; await reply, first byte is tag, then result
+0855   4406             AA33:
+0856   4406 CD 16 44        CALL QLD_GETBYTE
+0857   4409 FE 2A           CP   42 ; tag
+0858   440B C0              RET  NZ
+0859   440C 06 08           ld B,8  ; 
+0860   440E             QSFDLY:
+0861   440E 10 0F           djnz lgapdly     ; 13*n-5 = 47 for 4
+0862   4410             AA34:
+0863   4410 CD 16 44        CALL QLD_GETBYTE
+0864   4413 FE 01           CP   1 ; result
+0865   4415 C9              RET    ; Z on match
+0866   4416             
+0867   4416             
+0868   4416             
+0869   4416             ; gab between byte calls should be 77+12+7 - 17-10 = 69 clocks
+0870   4416             
+0871   4416             QLD_GETBYTE:    ; uses BC D, result in A
+0872   4416 0E FE           ld c,$fe   ; 7
+0873   4418 06 08           ld b,8  ; 7    for gap between start and bits
+0874   441A             
+0875   441A             lwt_stdly:                  ; 25 cycles=7.7us
+0876   441A DB FE           in a,($FE)  ; 11
+0877   441C 17              rla         ; 4
+0878   441D 30 FB           jr nc,lwt_stdly ; 12 / 7  (D7=0 is low level, wait for high)
+0879   441F                 ; trigger is seen 4us too late in average, so wait 48-4 - 4 us now: 130 cy in-in
+0880   441F             lgapdly:
+0881   441F 10 FE           djnz lgapdly     ; 13*n-5 = 99 for 8
+0882   4421 06 08           ld b,8  ; 7
+0883   4423             lbloop:                 ;  need 104 for 32us
+0884   4423 ED 50           in d,(c)    ; 12
+0885   4425 CB 12           rl d        ; 8
+0886   4427 17              rla         ; 4 (rl a is 8)
+0887   4428 16 04           ld d,4      ; 7
+0888   442A             lbdly:
+0889   442A 15              dec d          ; 4          b*16-5 = 59
+0890   442B 20 FD           jr nz,lbdly     ; 12 / 7
+0891   442D 10 F4           djnz lbloop     ; 13 / 8
+0892   442F C9              RET     
+0893   4430                 
+0894   4430                 ;ORIGINAL:
+0895   4430                 ;ld (hl),a   ; 7
+0896   4430             	;CALL UPDATE  ; will use DE, inc HL    77 clks
+0897   4430                 ;jr lwt_start     ; 12
+0898   4430             
+0899   4430             
+0900   4430             
+0901   4430             
+0902   4430             ;*
+0903   4430             ;* Evaluate string  start of the string is in HL and the length in BC
+0904   4430             ;*
+0905   4430 E7          NAME:	RST 20h
+0906   4431 CD 55 0F    	CALL 0F55h ; evaluate
+0907   4434 3A 01 40    	LD A,(4001h)
+0908   4437 87          	ADD A,A
+0909   4438 FA 9A 0D    	JP M,0D9Ah  ; error
+0910   443B E1          	POP HL
+0911   443C D0          	RET NC
+0912   443D E5          	PUSH HL
+0913   443E CD F8 13    	CALL 13F8h ; get indexvar fom calc stack STK-FETCH
+0914   4441                 ; For strings, the start of the string is in DE and the length in BC
+0915   4441 62          	LD H,D
+0916   4442 6B          	LD L,E
+0917   4443 C9          	RET
+0918   4444             
+0919   4444             
+0920   4444             SEND_PACKET: ; HL points to data, C holds type, B lenght (0=256bytes), HL will point behind sent data afterwards
+0921   4444 F5              PUSH AF
+0922   4445 C5              PUSH BC ; BC needed twice, for header, and recovered at end
+0923   4446 C5              PUSH BC
+0924   4447             
+0925   4447 06 E1           LD B,225    ;   TODO 125 should be enough
+0926   4449             SPWT:
+0927   4449 10 FE           djnz SPWT     ; 500 microsec  (125*4)  ; let the video lines sync again, require 5 lines (320), some margin added
+0928   444B             
+0929   444B                 ; we want all our pulses in sync with the HSYNC pulses to not interfere   
+0930   444B AF              XOR A       ; make sure A' not at sync or display position to
+0931   444C 08              EX AF,AF'   ; just cause short INT on MNI here:
+0932   444D                             
+0933   444D D3 FE           OUT ($FE),A  ; ENABLE NMI
+0934   444F 76              HALT
+0935   4450 D3 FD           OUT ($FD),A  ; Disable NMI   from here, start first bit in 54us =174cy
+0936   4452 DB FE           IN      A,($FE)         ; signal to 0 /on - syncout
+0937   4454 7E              LD   A,(HL)     ; 7 dummy 
+0938   4455 00              NOP             ; 4
+0939   4456 06 07           LD   B,7
+0940   4458 00              NOP             ; timing adjust to have bits symmetrical in (black-shouldered) line
+0941   4459 D3 FF           OUT     ($FF),A ;11        ; signal to 1 / syncoff
+0942   445B             waitnline:
+0943   445B 10 FE           DJNZ waitnline          ; delay for next line 13 per loop ..
+0944   445D C1              POP  BC            ;10
+0945   445E             
+0946   445E             
+0947   445E                 ; Send packettype in C
+0948   445E             AA35:
+0949   445E CD A4 44        CALL SENDNIBBLE ;151, so we need 56 cycles between nibbles to get to 207 for one hsync line
+0950   4461             
+0951   4461 23              INC  HL         ; 6  ; DUMMY matching later dec
+0952   4462 7E              LD   A,(HL)     ; 7 
+0953   4463 D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0954   4465 7E              LD   A,(HL)     ; 7 
+0955   4466 7E              LD   A,(HL)     ; 7 
+0956   4467 7E              LD   A,(HL)     ; 7 
+0957   4468 7E              LD   A,(HL)     ; 7 
+0958   4469 00              NOP
+0959   446A             AA36:
+0960   446A CD A4 44        CALL SENDNIBBLE ;151
+0961   446D             
+0962   446D 2B              DEC  HL 
+0963   446E 7E              LD   A,(HL)     ; 7 
+0964   446F D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
+0965   4471 7E              LD   A,(HL)     ; 7 
+0966   4472 7E              LD   A,(HL)     ; 7 
+0967   4473 7E              LD   A,(HL)     ; 7 
+0968   4474 7E              LD   A,(HL)     ; 7 
+0969   4475 48              LD C,B             ;4
+0970   4476             
+0971   4476                 ; Send length in B
+0972   4476             AA37:
+0973   4476 CD A4 44        CALL SENDNIBBLE ;151
+0974   4479             
+0975   4479 23              INC  HL         ; 6  ; DUMMY matching later dec
+0976   447A 7E              LD   A,(HL)     ; 7 
+0977   447B D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+0978   447D 7E              LD   A,(HL)     ; 7 
+0979   447E 7E              LD   A,(HL)     ; 7 
+0980   447F 7E              LD   A,(HL)     ; 7 
+0981   4480 7E              LD   A,(HL)     ; 7 
+0982   4481 00              NOP             ; 4
+0983   4482             AA38:
+0984   4482 CD A4 44        call SENDNIBBLE ;151
+0985   4485             
+0986   4485 2B              DEC  HL 
+0987   4486 7E              LD   A,(HL)     ; 7 
+0988   4487             byteloop:
+0989   4487 D3 FF           OUT     ($FF),A ;11        ; signal to 1 /off
+0990   4489 7E              LD   A,(HL)     ; 7 
+0991   448A 7E              LD   A,(HL)     ; 7 
+0992   448B 7E              LD   A,(HL)     ; 7 
+0993   448C 4E              LD   C,(HL)     ; 7 
+0994   448D 00              NOP
+0995   448E             AA39:
+0996   448E CD A4 44        call SENDNIBBLE ;151
+0997   4491 23              INC  HL         ; 6
+0998   4492 7E              LD   A,(HL)     ; 7 
+0999   4493 D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+1000   4495 7E              LD   A,(HL)     ; 7 
+1001   4496 7E              LD   A,(HL)     ; 7 
+1002   4497 7E              LD   A,(HL)     ; 7 
+1003   4498 7E              LD   A,(HL)     ; 7 
+1004   4499 00              NOP
+1005   449A                                 ; 56
+1006   449A             AA40:    
+1007   449A CD A4 44        CALL SENDNIBBLE ;151
+1008   449D 10 E8           DJNZ byteloop   ; 13
+1009   449F D3 FF           OUT     ($FF),A ; 11        ; signal to 1 /off
+1010   44A1             
+1011   44A1 C1              POP  BC
+1012   44A2 F1              POP  AF
+1013   44A3 C9              ret
+1014   44A4             
+1015   44A4             
+1016   44A4             SENDNIBBLE: ;31 per bit, 134 incl RET 151 incl call, nibble in C lower half
+1017   44A4                 ; Four bits to send
+1018   44A4                 ;# bit 1 start
+1019   44A4 CB 01           RLC C       ; 8
+1020   44A6 38 19           JR C, csendH1 ; 12/7
+1021   44A8 D8              ret c        ; 11/5 dummy for symmetric timing
+1022   44A9                 ;# bit 1 send 0
+1023   44A9 DB FE           IN      A,($FE)         ; signal to 0 /on
+1024   44AB             
+1025   44AB                 ;# bit 2 start
+1026   44AB CB 01           RLC C       ; 8
+1027   44AD 38 2A           JR C, csendH2 ; 12/7
+1028   44AF D8              ret c        ; 11/5 dummy for symmetric timing
+1029   44B0                 ;# bit 2 send 0
+1030   44B0 DB FE           IN      A,($FE)         ; signal to 0 /on
+1031   44B2             
+1032   44B2                 ;# bit 3 start
+1033   44B2 CB 01           RLC C       ; 8
+1034   44B4 38 34           JR C, csendH3 ; 12/7
+1035   44B6 D8              ret c        ; 11/5 dummy for symmetric timing
+1036   44B7                 ;# bit 3 send 0
+1037   44B7 DB FE           IN      A,($FE)         ; signal to 0 /on
+1038   44B9             
+1039   44B9                 ;# bit 4 start
+1040   44B9 CB 01           RLC C       ; 8
+1041   44BB 38 37           JR C, csendH4 ; 12/7
+1042   44BD D8              ret c        ; 11/5 dummy for symmetric timing
+1043   44BE                 ;# bit 4 send 0
+1044   44BE DB FE           IN      A,($FE)         ; signal to 0 /on
+1045   44C0             
+1046   44C0 C9              ret
+1047   44C1             
+1048   44C1             
+1049   44C1             csendH1:    ;# bit 1 send 1
+1050   44C1 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+1051   44C3             
+1052   44C3                 ;# bit 2 start
+1053   44C3 CB 01           RLC C       ; 8
+1054   44C5 38 12           JR C, csendH2 ; 12/7
+1055   44C7 D8              ret c        ; 11/5 dummy for symmetric timing
+1056   44C8                 ;# bit 2 send 0
+1057   44C8 DB FE           IN      A,($FE)         ; signal to 0 /on
+1058   44CA             
+1059   44CA                 ;# bit 3 start
+1060   44CA CB 01           RLC C       ; 8
+1061   44CC 38 1C           JR C, csendH3 ; 12/7
+1062   44CE D8              ret c        ; 11/5 dummy for symmetric timing
+1063   44CF                 ;# bit 3 send 0
+1064   44CF DB FE           IN      A,($FE)         ; signal to 0 /on
+1065   44D1             
+1066   44D1                 ;# bit 4 start
+1067   44D1 CB 01           RLC C       ; 8
+1068   44D3 38 1F           JR C, csendH4 ; 12/7
+1069   44D5 D8              ret c        ; 11/5 dummy for symmetric timing
+1070   44D6                 ;# bit 4 send 0
+1071   44D6 DB FE           IN      A,($FE)         ; signal to 0 /on
+1072   44D8 C9              ret
+1073   44D9             
+1074   44D9             csendH2:    ;# bit 2 send 1
+1075   44D9 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+1076   44DB             
+1077   44DB                 ;# bit 3 start
+1078   44DB CB 01           RLC C       ; 8
+1079   44DD 38 0B           JR C, csendH3 ; 12/7
+1080   44DF D8              ret c        ; 11/5 dummy for symmetric timing
+1081   44E0                 ;# bit 3 send 0
+1082   44E0 DB FE           IN      A,($FE)         ; signal to 0 /on
+1083   44E2             
+1084   44E2                 ;# bit 4 start
+1085   44E2 CB 01           RLC C       ; 8
+1086   44E4 38 0E           JR C, csendH4 ; 12/7
+1087   44E6 D8              ret c        ; 11/5 dummy for symmetric timing
+1088   44E7                 ;# bit 4 send 0
+1089   44E7 DB FE           IN      A,($FE)         ; signal to 0 /on
+1090   44E9 C9              ret
+1091   44EA             
+1092   44EA             csendH3:    ;# bit 3 send 1
+1093   44EA D3 FF           OUT     ($FF),A         ; signal to 1 /off
+1094   44EC             
+1095   44EC                 ;# bit 4 start
+1096   44EC CB 01           RLC C       ; 8
+1097   44EE 38 04           JR C, csendH4 ; 12/7
+1098   44F0 D8              ret c        ; 11/5 dummy for symmetric timing
+1099   44F1                 ;# bit 4 send 0
+1100   44F1 DB FE           IN      A,($FE)         ; signal to 0 /on
+1101   44F3 C9              ret
+1102   44F4             
+1103   44F4             csendH4:    ;# bit 4 send 1
+1104   44F4 D3 FF           OUT     ($FF),A         ; signal to 1 /off
+1105   44F6 C9              ret
+1106   44F7             
+1107   44F7             DRIVER_END:
+1108   44F7             
+1109   44F7 76             db $76   ;N/L 
+1110   44F8             
+1111   44F8             line10:
+1112   44F8 00 0A          db 0,10  ;line number 
+1113   44FA 13 00          dw dfile-$-2  ;line length 
+1114   44FC F5             db $f5   ;PRINT 
+1115   44FD D4             db $d4   ;USR 
+1116   44FE 1D             db $1d   ;1 
+1117   44FF 22             db $22   ;6 
+1118   4500 21             db $21   ;5 
+1119   4501 1D             db $1d   ;1 
+1120   4502 20             db $20   ;4 
+1121   4503 7E             db $7e   ;FP mark 
+1122   4504 8F             db $8f   ;5 bytes FP number 
+1123   4505 01             db $01   ; 
+1124   4506 04             db $04   ; 
+1125   4507 00             db $00   ; 
+1126   4508 00             db $00   ; 
+1127   4509 1A             db $1a   ; ,
+1128   450A 0B             db $0b   ; "
+1129   450B 2D             db c_H   ; Help
+1130   450C               
+1131   450C              ;  db c_I   ; I 10000 install
+1132   450C                ;db c_I   ; TTTT2 = QLOAD test
+1133   450C                ;db c_T   ; SNNN = dummy save for testing
+1134   450C                ;db c_S   ; STST,1024,100 binsave
+1135   450C                ;db c_T   ; LTST,1024   binload
+1136   450C              ;  db 0   ; 
+1137   450C              ;  db c_0+1   ; 
+1138   450C              ;  db c_0+0   ; 
+1139   450C              ;  db c_0+0   ; 
+1140   450C              ;  db c_0+0   ; 
+1141   450C              ;  db c_0+0   ; 
+1142   450C             ;   db 26
+1143   450C             ;   db c_0+1   ; 
+1144   450C             ;   db c_0+0   ; 
+1145   450C             ;   db c_0+0   ; 
+1146   450C 0B             db $0b   ; "
+1147   450D 76             db $76   ;N/L 
+1148   450E 76             db $76   ;N/L 
+1149   450F             
+1150   450F             
+1151   450F                
+1152   450F             ;- Display file -------------------------------------------- 
+1153   450F              
+1154   450F             dfile: 
+1155   450F 76             db $76 
+1156   4510 3F 3D          db c_Z,c_X,
+1157   4512 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+1157   4516 76 76 76 76 
+1158   451A 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+1158   451E 76 76 76 76 
+1159   4522 76 76 76 76    db $76,$76,$76,$76,$76,$76,$76,$76 
+1159   4526 76 76 76 76 
+1160   452A              
+1161   452A             ;- BASIC-Variables ---------------------------------------- 
+1162   452A              
+1163   452A             var: 
+1164   452A 80             db $80 
+1165   452B              
+1166   452B             ;- End of program area ---------------------------- 
+1167   452B             
+1168   452B             last: 
+1169   452B              
+1170   452B                end 
 tasm: Number of errors = 0

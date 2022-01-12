@@ -171,7 +171,7 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
     /* Add status line */
 
-    httpd_resp_sendstr_chunk(req, "<p>ZX-Wespi 2020 by members of ZX-TEAM. Version ");
+    httpd_resp_sendstr_chunk(req, "<p>ZX-Wespi 2020-2022 by members of ZX-TEAM. Version ");
     httpd_resp_sendstr_chunk(req,esp_ota_get_app_description()->version);
     httpd_resp_sendstr_chunk(req, "-");
     httpd_resp_sendstr_chunk(req,esp_ota_get_app_description()->date);
