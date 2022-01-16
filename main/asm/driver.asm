@@ -356,6 +356,14 @@ RELOC_TABLE:
     dw AA43+1-DRIVER_START
     dw AA44+1-DRIVER_START
     dw AA45+1-DRIVER_START
+    dw AA46+1-DRIVER_START
+    dw AA47+1-DRIVER_START
+    dw AA48+1-DRIVER_START
+    dw AA49+1-DRIVER_START
+
+    dw AA50+1-DRIVER_START
+    dw AA51+1-DRIVER_START
+
     dw 0    ; final
 
 
@@ -739,45 +747,111 @@ BSERREXIT:
 	RET
 
 
-HLPTXT:
-	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,0, c_0,27,c_0+1,c_0,c_0+1,c_NEWLINE
-    db c_NEWLINE
+HLPTXT1:
+	db c_Z,c_X,0,c_W,c_E,c_S,c_P,c_I,0,c_D,c_R,c_I,c_V,c_E,c_R,c_NEWLINE
+    db c_NEWLINE,c_NEWLINE
+	db c_P,c_R,c_I,c_N,c_T, 0 , c_U, c_S, c_R, 0 
+	db $ff
+
 ;	db "INFO  ",22h,"I",22h,0dh
 ;	db "DIR   ",22h,"D",22h,0dh
 ;	db "ERASE ",22h,"ENAME.P",22h,0dh
 ;	db "MKDIR ",22h,"DMVERZ",22h,0dh
 ;	db "RMDIR ",22h,"DEVERZ",22h,0dh
 ;	db "CHDIR ",22h,"DCVERZ",22h,0dh
+HLPTXT2:
+	db 26, 11, 19, c_C,c_M,c_D, 18,  11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
+    db c_NEWLINE,c_NEWLINE
 	db c_L,c_O,c_A,c_D, 0 , 0 , 0, 11, c_L, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "LOAD  ",22h,"LNAME.P",22h,0dh
 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
+	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
     db c_NEWLINE
 	db c_I,c_N,c_S,c_T,c_A,c_L,c_L, 0 , c_D,c_R,c_V, 0 ,c_T,c_O, 0, c_R,c_A,c_M,  0, 11, c_I, 0, c_A, c_D, c_D, c_R,  11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 ;	db c_T,c_E,c_S,c_T, 0 , 0 , 0, 11, c_T, c_L, c_T, c_T, c_T, c_0+2, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
-    db c_NEWLINE
-	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "FOR SIGGI'S UFM :V/R/K",0dh
     db c_NEWLINE
+    db c_NEWLINE
+    db c_R, c_E, c_V, 0, c_A, c_0+1,0,0,0, c_S, c_I, c_Z, c_E, 0
 	db $ff
 
 
 ; === Subroutine print help text ====
 AA08:
-HLP:	LD HL,HLPTXT
-HLP1:	LD A,(HL)
-	CP $FF
-	JR Z, EXITHLP
-    RST 10H
-	INC HL
-	JR HLP1
-EXITHLP:
+HLP:
+	LD HL,HLPTXT1
+AA46:
+    CALL PRINTTEXT
+AA47:
+	LD HL,DRIVER_START
+AA48:
+    CALL PRINTBASE10
+AA49:
+	LD HL,HLPTXT2
+AA50:
+    CALL PRINTTEXT
+    LD HL,DRIVER_END-DRIVER_START
+AA51:
+    CALL PRINTBASE10
     LD   BC,42
     XOR  A
     RET
 
+; Text in HL, FF marks end
+PRINTTEXT:
+HLP1:	LD A,(HL)
+	CP $FF
+	RET Z
+    RST 10H
+	INC HL
+	JR HLP1
+
+
+; *
+; * PRINT HL DECIMAL
+; *
+PRINTBASE10:
+	PUSH HL
+	PUSH BC
+	PUSH DE
+    XOR A
+	PUSH AF
+_PRTLP:
+	CALL _DIV10
+	ADD A,1CH
+	PUSH AF
+	LD A,H
+	OR L
+	JR NZ,_PRTLP
+_PRTL1:
+	POP AF
+	OR A
+	JR NZ,_PRT2
+	POP DE
+	POP BC
+	POP HL
+	RET
+_PRT2
+	RST 10H
+	JR _PRTL1
+; * HL=HL/10 A=REMAINDE
+_DIV10:
+	LD B,10h
+	XOR A
+_DIVLP:
+	SLA L
+	RL H
+	RLA
+	CP 0Ah
+	JR C,_SK
+	SET 0,L
+	SUB 0Ah
+_SK:
+	DJNZ _DIVLP
+	RET
 
 
 GO_QSAVE_MODE:

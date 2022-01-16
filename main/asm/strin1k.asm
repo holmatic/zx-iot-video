@@ -204,16 +204,23 @@ S_END:
     LD HL, $0676    ; return address in NEXT-LINE like when LOADING
 	EX (SP),HL
 #if 1
-    ; run from calculator area
+    ; run loader from stack area
+    ; max used size for 1k programs is at $4009 + 949/952 bytes
+    ; the 32 byte loader fits at RAMTOP-60 givig stack just enough space
+    LD BC,-60
+	LD HL,(16388) ; RAMTOP
+    ADD HL,BC
+    PUSH HL     ; put address of quick loader on stack, can use RET later to go there
+    EX DE,HL
     LD HL,PLOADER
-    LD DE,32708
     LD BC,32
     LDIR
-
+    ; LD DE,32708 hardcoded position, would not work with moved RAMTOP
 	LD HL,ELINEHI
 	INC (HL) ; make sure no match during load
 	LD HL,4009h	; start of BASIC area to load
-    jp 32708
+    RET      ; go to calculated address below RAMTOP  jp 32708
+
 #else
 	LD HL,ELINEHI
 	INC (HL) ; make sure no match during load
