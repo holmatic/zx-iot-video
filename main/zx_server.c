@@ -259,8 +259,24 @@ static void zxsrv_task(void *arg)
                         if( (evt.addr&0xff)+1 == qsavestatus.expected_size) {    // end of name field
                             file_name_len=qsavestatus.expected_size;
                             while (file_name_len>1 && file_first_bytes[file_name_len-1]==0) file_name_len--; // remove trailing whitespace
-                            // (TODO maybe check about comma, space, etc for bin file, then set as_p_file accordingly)
-                            // load file
+                            // the command itself comes with the name to check for DIRECTORY
+                            if( file_first_bytes[0] == ASCII2ZXCODE('D')  ){
+                                // DIRECTORY
+                                const uint8_t testdata[]={0x76,0x76,0x76,0x76,151,151,0x76,0x76,0x76,0x76,  0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76, 0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76,};
+                                uint8_t reply[3]={123,0,0};
+                                reply[1]=sizeof(testdata)&0x00ff;
+                                reply[2]=(sizeof(testdata)&0xff00)>>8;
+                                ESP_LOGI(TAG,"LOAD: DIRECTORY... %2x %2x ",reply[1],reply[2]);
+                                send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // if we have data, all fine, data will follow
+                                send_direct_data_compr(testdata, sizeof(testdata) ,OUTLEVEL_AUTO);
+                            } else if (file_first_bytes[0] == ASCII2ZXCODE('L') ) {
+                                // LOAD, remove command from name, as the code below expects just the name
+                                uint8_t start=1;
+                                while(file_first_bytes[start]==0 && start+1<file_name_len) start++; // also remove trailing whitespace from name
+                                for(uint8_t i=0; i<=file_name_len; i++) file_first_bytes[i]=file_first_bytes[i+start];
+                                file_name_len-=start;
+                            }
+                            // continue parsing w/o preamble
                             if(     file_name_len==4 && file_first_bytes[0] == ASCII2ZXCODE('T') 
                                 && file_first_bytes[1] == ASCII2ZXCODE('T') && file_first_bytes[2] == ASCII2ZXCODE('T')  )         {
                                 ESP_LOGI(TAG,"LOAD: REQUEST DUMMY IMAGE LTTTx with x=inversion level ");

@@ -61,7 +61,8 @@ typedef enum {
 
 #define ZX_QSAVE_TAG_HANDSHAKE      90	// Wespi should respond with some dummy signal to see it is there
 #define ZX_QSAVE_TAG_SAVEPFILE      91
-#define ZX_QSAVE_TAG_LOADPFILE      93
+#define ZX_QSAVE_TAG_LOADPFILE      93  // load and binload and DIR
+
 #define ZX_QSAVE_TAG_DATA           95
 #define ZX_QSAVE_TAG_END_NOREPLY    98
 #define ZX_QSAVE_TAG_END_RQ         99

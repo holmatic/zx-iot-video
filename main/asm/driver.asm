@@ -204,6 +204,9 @@ AA02:
 	CP c_T		; Test, return 0...1023 dependng on number of correct bytes
 AA43:
 	JP Z,TESTPATTERN
+	CP c_D		; Directory
+AA52:
+	JP Z,LOAD1
 	CP c_H		; Help
 AA03:
 	JP Z,HLP
@@ -363,6 +366,8 @@ RELOC_TABLE:
 
     dw AA50+1-DRIVER_START
     dw AA51+1-DRIVER_START
+    dw AA52+1-DRIVER_START
+
 
     dw 0    ; final
 
@@ -413,8 +418,10 @@ PRINTA:
     RET
     
 
-LOAD1:
+LOAD1: ; both load and dir
 	; HL points to arg string, BC number of chars
+    DEC HL  ; back to original CMD - as it coulf be LOAD or DIR
+    INC BC  ; also transmit CMD char here as we need to distinguish L and D
     PUSH HL  ; orig pos of args (w/o prefix T)
     PUSH BC  ; orig lenght of args (w/o prefix T)
     ; Check if we have contact
@@ -466,8 +473,11 @@ AA14:
     POP  HL ; recover name pointer/length
     PUSH DE             ; length, will go to BC below
     PUSH DE             ; length, again, for end result
-
-
+    LD A,(HL) ; check command L or D
+    CP c_D
+    JR Z,SHOWDIR
+    INC HL  ; skip cmd
+    DEC BC
     ;  test if saving binary or regular basic
 AA15:
     CALL CHECKCOMMA
@@ -510,7 +520,6 @@ LD_ERR:
     RET ; BC WILL be at maximum now
 
 
-
 BINLOAD: ; HL points to the comma in arg string, now parse addr, length
     INC  HL
     DEC  C
@@ -522,6 +531,23 @@ AA17:
     LD   E,0    ; mark as binary
     JR LOADLOOP
 
+SHOWDIR:
+    ; this is like a binload but into the screen area
+    ; first prepare space for it
+    LD HL,(16396) ; D_FILE pos
+    INC HL
+    LD (16398),HL  ; restore print position to start of screen as we clean all
+    EX DE,HL       ; start addr now in DE
+    LD HL,(16400)  ; VARS pos as end of screen
+    DEC HL;        ; leave one byte in there, otherwise pointers will collapse
+    CALL $A5D      ; reclaim-diff: release mem from DE to HL: CF_CC to VARS-1
+    POP BC         ; get length of new screen
+    PUSH BC        ; put back, needed later 
+    DEC BC         ; we left one byte already
+    LD (16398),HL  ; start from print position
+    CALL $99E      ; make-room: reserve BC bytes at HL
+    LD   E,0       ; from now on it is just a binload, mark
+    JR LOADLOOP    ; 
 
 
 ; parse a decimal number
@@ -1200,8 +1226,9 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
-   db c_H   ; Help
-  
+ ;  db c_H   ; Help
+   db c_D   ; Dir
+
  ;  db c_I   ; I 10000 install
    ;db c_I   ; TTTT2 = QLOAD test
    ;db c_T   ; SNNN = dummy save for testing
