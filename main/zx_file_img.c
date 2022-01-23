@@ -139,6 +139,21 @@ void zxfimg_cpzx_video(uint8_t linenum, const uint8_t* zxstr, uint16_t len) {
 	mem_insert(zxstr,dfile_pos,len);
 }
 
+
+
+uint8_t* zxfimg_get_dfile(){
+	uint16_t dfile_pos=mem_rd16(16396);//dfile
+	return &memimg[dfile_pos-img_offs];
+}
+
+uint16_t zxfimg_get_dfile_size(){
+	uint16_t dfile_pos=mem_rd16(16396);//dfile
+	uint16_t vars_pos=mem_rd16(16400);//vars
+	return vars_pos-dfile_pos;
+}
+
+
+
 void zxfimg_print_video(uint8_t linenum, const char* asciitxt) {
 	zxfimg_cpzx_video(linenum,zx_txt_buf, convert_ascii_to_zx_str(asciitxt) );
 }

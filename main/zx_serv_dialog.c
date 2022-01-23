@@ -23,7 +23,7 @@ to build a multi-stage menu system
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "zx_file_img.h"
-
+#include "esp_spiffs.h"
 #include "iis_videosig.h"
 #include "lcd_display.h"//TODO
 #include "video_attr.h"
@@ -455,6 +455,85 @@ static bool zxsrv_videooptions(const char *name, int command){
 }
 
 
+#define MAX_DIRPAGE_ENTRIES 20
+
+
+void zxsrv_directory_display(uint32_t page){
+    const char *dirpath="/spiffs/";
+
+    char entrypath[ESP_VFS_PATH_MAX+17];
+    char entrysize[16];
+    char entryname[32];
+    uint8_t entry_num=0;
+    uint8_t disp_line=0;
+    uint16_t num_entries=0;
+    struct dirent *entry;
+    struct stat entry_stat;
+    DIR *dir = opendir(dirpath);
+    const size_t dirpath_len = strlen(dirpath);
+
+
+    zxfimg_create(ZXFI_MENU_KEY); // we only extract the display dfile, so type of img does not matter
+
+    /* Retrieve the base path of file storage to construct the full path */
+    strlcpy(entrypath, dirpath, sizeof(entrypath));
+
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
+        snprintf(txt_buf,32,"[ DIR ERROR ] ");
+        zxfimg_print_video(2,txt_buf);
+        return;
+    }
+    // count the overall number of entries first
+    num_entries=0;
+    while ((entry = readdir(dir)) != NULL) num_entries++;
+    closedir(dir);
+    uint32_t num_pages = (uint32_t) ( (num_entries+MAX_DIRPAGE_ENTRIES-1) / MAX_DIRPAGE_ENTRIES  );
+    if(page>=num_pages) page=num_pages;
+    if(page<1) page=1;
+    if(num_entries>MAX_DIRPAGE_ENTRIES){
+        snprintf(txt_buf,38,"[ DIRECTORY ] (PAGE %d of %d)",page, num_pages );
+    }else{
+        snprintf(txt_buf,32,"[ DIRECTORY ] ");
+    }
+    zxfimg_print_video(1,txt_buf);
+    dir = opendir(dirpath);
+    /* Iterate over all files / folders and fetch their names and sizes */
+    disp_line=0;
+    while ((entry = readdir(dir)) != NULL && disp_line<MAX_DIRPAGE_ENTRIES) {
+    	if (entry_num >= (page-1)*MAX_DIRPAGE_ENTRIES){
+            strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
+            size_t namelen=strnlen(entry->d_name,24);
+            strlcpy(entryname,entry->d_name,namelen+1);
+            for(int i=namelen; i<18; i++) entryname[i]=' '; // extend to equal length
+            entryname[18]=0; // force end
+			if (stat(entrypath, &entry_stat) == -1) {
+				ESP_LOGE(TAG, "Failed to stat %s", entry->d_name);
+				continue;
+			}
+            if(entry->d_type == DT_DIR)
+    			snprintf(entrysize,10, "(DIR)");
+            else
+    			snprintf(entrysize,10, "%6ld", entry_stat.st_size);
+			ESP_LOGI(TAG, "Found %s : (%s bytes)", entry->d_name , entrysize);
+			snprintf(txt_buf,32,"%.20s  %.7s",entryname,entrysize);
+			zxfimg_print_video(disp_line+3,txt_buf);
+			disp_line++;
+    	}
+        entry_num++;
+    }
+
+    /* Add free space info -  TODO have more generic vfs method here? */
+    size_t total = 0, used = 0;
+    if (esp_spiffs_info(NULL, &total, &used) == ESP_OK) {
+        snprintf(txt_buf,35,"     ( %dK OF %dK FREE )",(total-used)/1024,total/1024);
+        zxfimg_print_video(MAX_DIRPAGE_ENTRIES+3,txt_buf);
+    }
+
+
+    closedir(dir);
+}
+
 
 #define MAX_FILEENTRY_LINES 15
 
@@ -563,6 +642,8 @@ char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
     const char *dirpath="/spiffs/";
 
     char* result=NULL;
+    uint8_t num_match_candidates=0;
+    uint8_t num_basematch_candidates=0;
     struct dirent *entry;
     DIR *dir = opendir(dirpath);
     const size_t dirpath_len = strlen(dirpath);
@@ -575,31 +656,46 @@ char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
         ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
         return 0;
     }
-    dir = opendir(dirpath);
 
-
-    /* Iterate over all files / folders and fetch their names and sizes */
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR) continue;
-        strlcpy(zxsrv_find_file_entrypath + dirpath_len, entry->d_name, sizeof(zxsrv_find_file_entrypath) - dirpath_len);
-        uint8_t* inpname=tape_string_name;
-        char* filen=entry->d_name;
-        while(*filen){
-            if( (convert_ascii_to_zx_code(*filen)&0x3f) != (*inpname&0x3f) ) /* ignore inverse */ break;
-            /* match so far */
-            if(*inpname >= 64){
-                /* full match */
-                result=zxsrv_find_file_entrypath;
-                ESP_LOGI(TAG, "MATCH : %s  ", zxsrv_find_file_entrypath);
-                break;
+    for(uint8_t iteration=1;iteration<3; iteration++)   /* only full match in first iteration, part match later in unambiguous*/
+    {
+        dir = opendir(dirpath);
+        /* Iterate over all files / folders and fetch their names and sizes */
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_type == DT_DIR) continue;
+            strlcpy(zxsrv_find_file_entrypath + dirpath_len, entry->d_name, sizeof(zxsrv_find_file_entrypath) - dirpath_len);
+            uint8_t* inpname=tape_string_name;
+            char* filen=entry->d_name;
+            while(*filen){
+                if( (convert_ascii_to_zx_code(*filen)&0x3f) != (*inpname&0x3f) ) /* ignore inverse */ break;
+                /* match so far */
+                if(*inpname >= 64){
+                    /* match ZX name */
+                    result=zxsrv_find_file_entrypath;
+                    ESP_LOGI(TAG, "MATCH : %s  ", zxsrv_find_file_entrypath);
+                    /* iteration 1, exit only if we have a real full match on both sides */
+                    if (*(inpname+1)==0) break;
+                    /* iteration 2, exit also if we have a unique or better match */
+                    if (iteration>=2){
+                         if(num_match_candidates==1) break; /* no full match but unique */
+                         if(num_basematch_candidates==1 && *(inpname+1)=='.')break; /* more condidates but only one with basename match */
+                    }
+                    /* statistics for unambiguous matches */
+                    if(iteration==1){
+                        num_match_candidates++; /* count candidates in first iteration */
+                        if(*(inpname+1)=='.') num_basematch_candidates++;
+                    }
+                    /* if we end up here, we need to check for more candidates */
+                    result=NULL;
+                }
+                ++inpname;
+                ++filen;
             }
-            ++inpname;
-            ++filen;
+            if(result)  break;
         }
-        if(result) break;
+        closedir(dir);
+        if(result || !num_match_candidates )  break;
     }
-    closedir(dir);
-
     if(!result && tape_string_name[0]==22) return zxsrv_find_file_from_zxname(&tape_string_name[1]);  // Minus sign may be used for TAPE selection on NU, check if we have a match w/o this
     
     return result; // to send_zxf_image_compr();zxfimg_delete();

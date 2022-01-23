@@ -31,6 +31,10 @@ void zxfimg_set_img(uint16_t filepos,uint8_t data);
 uint8_t* zxfimg_get_img();
 uint16_t zxfimg_get_size();
 uint16_t zxfimg_get_raw_fill_size();
+
+uint8_t* zxfimg_get_dfile();
+uint16_t zxfimg_get_dfile_size();
+
 void zxfimg_delete();
 
 

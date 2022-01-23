@@ -537,6 +537,9 @@ SHOWDIR:
     LD HL,(16396) ; D_FILE pos
     INC HL
     LD (16398),HL  ; restore print position to start of screen as we clean all
+    ;XOR A
+    ;LD (16441),A      ; PRINT col 24
+    ;LD (16442),A      ; PRINT line 33?
     EX DE,HL       ; start addr now in DE
     LD HL,(16400)  ; VARS pos as end of screen
     DEC HL;        ; leave one byte in there, otherwise pointers will collapse
@@ -792,6 +795,7 @@ HLPTXT2:
 	db c_S,c_A,c_V,c_E, 0 , 0 , 0, 11, c_S, c_N, c_A, c_M, c_E, 11,c_NEWLINE   ; "SAVE  ",22h,"SNAME.P",22h,0dh
 	db c_B,c_L,c_O,c_A,c_D, 0 , 0, 11, c_L, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 11,c_NEWLINE   ; "BLOAD ",22h,"LNAME.B,SSSS",22h,0dh
 	db c_B,c_S,c_A,c_V,c_E, 0 , 0, 11, c_S, c_N, c_A, c_M, c_E,26, c_A, c_D, c_D, c_R, 26, c_L, c_E, c_N,  11,c_NEWLINE   ; "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
+	db c_D,c_I,c_R,  0, 0 , 0 , 0, 11, c_D, 11, 0, c_O, c_R, 0, 11, c_D,0, c_P, c_A, c_G, c_E, 11,     ,c_NEWLINE   ;  c_H,   "DIR  ",22h,"H",22h,0dh
 	db c_H,c_E,c_L,c_P, 0 , 0 , 0, 11, c_H, 11,c_NEWLINE   ;  c_H,   "HELP  ",22h,"H",22h,0dh
 ;	db "BSAVE ",22h,"SNAME.B,SSSS,EEEE",22h,0dh
 ;	db "RENAME",22h,"ROLDNAME NEWNAME",22h,0dh
@@ -801,7 +805,7 @@ HLPTXT2:
 ;	db "FOR SIGGI'S UFM :V/R/K",0dh
     db c_NEWLINE
     db c_NEWLINE
-    db c_R, c_E, c_V, 0, c_A, c_0+1,0,0,0, c_S, c_I, c_Z, c_E, 0
+    db c_R, c_E, c_V, 0, c_A, c_0+2,0,0,0, c_S, c_I, c_Z, c_E, 0
 	db $ff
 
 
@@ -1226,8 +1230,8 @@ line10:
    db $00   ; 
    db $1a   ; ,
    db $0b   ; "
- ;  db c_H   ; Help
-   db c_D   ; Dir
+   db c_H   ; Help
+ ;  db c_D   ; Dir
 
  ;  db c_I   ; I 10000 install
    ;db c_I   ; TTTT2 = QLOAD test

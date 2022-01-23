@@ -26,7 +26,7 @@ bool zxdlg_respond_from_key(uint8_t key);
 bool zxdlg_respond_from_string(uint8_t* strg, uint8_t len);
 
 
-
+void zxsrv_directory_display(uint32_t offset);
 
 
 bool zxsrv_load_file(const char *filepath);

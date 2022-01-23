@@ -262,13 +262,19 @@ static void zxsrv_task(void *arg)
                             // the command itself comes with the name to check for DIRECTORY
                             if( file_first_bytes[0] == ASCII2ZXCODE('D')  ){
                                 // DIRECTORY
-                                const uint8_t testdata[]={0x76,0x76,0x76,0x76,151,151,0x76,0x76,0x76,0x76,  0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76, 0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76,};
+                                //const uint8_t testdata[]={0x76,0x76,0x76,0x76,151,151,0x76,0x76,0x76,0x76,  0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76, 0x76,0x76,0x76,0x76,0x76,0x76,0x76,0x76,};
                                 uint8_t reply[3]={123,0,0};
-                                reply[1]=sizeof(testdata)&0x00ff;
-                                reply[2]=(sizeof(testdata)&0xff00)>>8;
+                                // get page number if provided
+                                uint8_t page=0;
+                                for(uint8_t i=1;i<file_name_len;i++) if (file_first_bytes[i] >=28 && file_first_bytes[i]<38) page=page*10+file_first_bytes[i]-28;
+                                zxsrv_directory_display(page);
+                                uint16_t dfsize=zxfimg_get_dfile_size()-1;
+                                reply[1]=dfsize&0x00ff;
+                                reply[2]=(dfsize&0xff00)>>8;
                                 ESP_LOGI(TAG,"LOAD: DIRECTORY... %2x %2x ",reply[1],reply[2]);
                                 send_direct_data_compr(reply,sizeof(reply),OUTLEVEL_AUTO); // if we have data, all fine, data will follow
-                                send_direct_data_compr(testdata, sizeof(testdata) ,OUTLEVEL_AUTO);
+                                send_direct_data_compr(zxfimg_get_dfile()+1, dfsize ,OUTLEVEL_AUTO);
+                                zxfimg_delete();
                             } else if (file_first_bytes[0] == ASCII2ZXCODE('L') ) {
                                 // LOAD, remove command from name, as the code below expects just the name
                                 uint8_t start=1;
