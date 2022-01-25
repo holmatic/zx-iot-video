@@ -674,16 +674,16 @@ char* zxsrv_find_file_from_zxname(uint8_t *tape_string_name){
                     result=zxsrv_find_file_entrypath;
                     ESP_LOGI(TAG, "MATCH : %s  ", zxsrv_find_file_entrypath);
                     /* iteration 1, exit only if we have a real full match on both sides */
-                    if (*(inpname+1)==0) break;
+                    if (*(filen+1)==0) break;
                     /* iteration 2, exit also if we have a unique or better match */
                     if (iteration>=2){
                          if(num_match_candidates==1) break; /* no full match but unique */
-                         if(num_basematch_candidates==1 && *(inpname+1)=='.')break; /* more condidates but only one with basename match */
+                         if(num_basematch_candidates==1 && *(filen+1)=='.') break; /* more condidates but only one with basename match */
                     }
                     /* statistics for unambiguous matches */
                     if(iteration==1){
                         num_match_candidates++; /* count candidates in first iteration */
-                        if(*(inpname+1)=='.') num_basematch_candidates++;
+                        if(*(filen+1)=='.') num_basematch_candidates++;
                     }
                     /* if we end up here, we need to check for more candidates */
                     result=NULL;
