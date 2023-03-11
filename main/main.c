@@ -110,7 +110,7 @@ void nvs_sys_init(){
 
 
 /* currently support 2 blink LED, if more need to be supporred we could either make it mask or configurable */
-#define PIN_NUM_BLINK_LED GPIO_NUM_MAX // 2 // 2 for JOY-IT, 21 for TTGO
+#define PIN_NUM_BLINK_LED   2 // 2 for JOY-IT, 21 for TTGO  GPIO_NUM_MAX
 #define PIN_NUM_2ND_BLINK_LED GPIO_NUM_MAX // 2 for JOY-IT, 21 for TTGO
 
 #define BLINK_LED_ON 1

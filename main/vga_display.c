@@ -528,7 +528,7 @@ void vga_disp_init(void)
 
 
     //xTaskCreate(vga_task, "vga_task", 1024 * 4, NULL, 12, NULL);
-    xTaskCreatePinnedToCore(vga_task, "vga_task" , 1024*3, NULL, 2, NULL, WIFI_TASK_CORE_ID ^ 1);
+    xTaskCreatePinnedToCore(vga_task, "vga_task" , 1024*3, NULL, configMAX_PRIORITIES-7, NULL, WIFI_TASK_CORE_ID ^ 1);
 
 }
 
