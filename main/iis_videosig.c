@@ -450,7 +450,8 @@ static void calpixel_framecheck(){
 			if((cal_pix_adj==165||cal_pix_adj==129) && pixel_calibration_frames==2)
 				ESP_LOGI(TAG," Sample: %08x %08x %08x", vid_pixel_mem[ (3+21)*80 ],vid_pixel_mem[(3+23)*80+1],vid_pixel_mem[(3+23)*80+8] );	
 		}
-		if(pixel_calibration_active<80){
+		if(pixel_calibration_active<36 || ( pixel_calibration_active==79 && cal_pix_bestadj_val>7500 && cal_pix_bestadj_pos>pixel_calibration_active+CAL_FILT_HSIZ*5)){
+			 /* ZX2000 needs to go down to 50, ZX81 should be >80 */
 			pixel_calibration_active=0;
 			ESP_LOGI(TAG," Done: Optimum is at %d.", cal_pix_bestadj_pos);	
 			set_pixel_adjust_nv(cal_pix_bestadj_pos);		
